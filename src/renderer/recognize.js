@@ -103,6 +103,51 @@ function squarish(r) {
   return r;
 }
 
+// Kenar listesini (köşeler arası) yaklaşık `step` aralıklı noktalara böler. Her köşe tam olarak
+// yer alır, böylece köşeler keskin kalır. Kapalıysa başlangıç noktasına geri döner.
+function sampleEdges(verts, closed, step) {
+  const out = [];
+  const edges = closed ? verts.length : verts.length - 1;
+  for (let i = 0; i < edges; i++) {
+    const a = verts[i], b = verts[(i + 1) % verts.length];
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let k = 0; k < n; k++) {
+      const t = k / n;
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  const last = closed ? verts[0] : verts[verts.length - 1];
+  out.push([last[0], last[1]]);
+  return out;
+}
+
+// Düzeltilmiş şeklin ideal kenar çizgisini [x, y] noktalarıyla döndürür (yaklaşık `step` dünya
+// biriminde). Fırça efektli çizgileri bu noktalarla yeniden çizmek için kullanılır.
+export function shapeToPoints(shape, step) {
+  if (shape.type === 'line') {
+    return sampleEdges([[shape.x1, shape.y1], [shape.x2, shape.y2]], false, step);
+  }
+  if (shape.type === 'rect') {
+    const { x, y, w, h } = shape;
+    return sampleEdges([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], true, step);
+  }
+  if (shape.type === 'polygon') {
+    return sampleEdges(shape.points, true, step);
+  }
+  if (shape.type === 'ellipse') {
+    const rx = shape.w / 2, ry = shape.h / 2, cx = shape.x + rx, cy = shape.y + ry;
+    const circ = Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry)));
+    const n = Math.max(24, Math.ceil(circ / step));
+    const out = [];
+    for (let k = 0; k <= n; k++) {
+      const a = (2 * Math.PI * k) / n;
+      out.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+    }
+    return out;
+  }
+  return [];
+}
+
 // points: [[x, y, baskı], ...] dünya koordinatında. Tanınırsa öğe alanlarını döndürür, yoksa null.
 export function recognizeShape(points, zoom) {
   const pts = points.map(([x, y]) => ({ x, y }));

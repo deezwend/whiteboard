@@ -5,7 +5,7 @@ import {
 import {
   drawElement, drawBackground, measureText, wrappedHeight, setImageLoadCallback, revealedCovers, renderOpts, getImage,
 } from './render.js';
-import { recognizeShape } from './recognize.js';
+import { recognizeShape, shapeToPoints } from './recognize.js';
 import { createRuler, rulerHit, nearEdge, projectOnEdge, snapAngle, drawRuler } from './ruler.js';
 import { createProtractor, protractorHit, nearArc, setArm, drawProtractor, PROT_R } from './protractor.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
@@ -1207,8 +1207,8 @@ function endPointer(e) {
           break;
         }
       }
-      // Özel fırçalar şekle çevrilmez; çevrilince efekt kaybolurdu.
-      if (!d.el.highlighter && !d.el.brush && !d.usedStraight && styles.pen.toShape) convertToShape(d.el);
+      // Oklu fırçalar şekle çevrilmez: ok ucu yönü anlamını yitirirdi.
+      if (!d.el.highlighter && d.el.brush !== 'arrow' && d.el.brush !== 'dashedarrow' && !d.usedStraight && styles.pen.toShape) convertToShape(d.el);
       changed();
       break;
     case 'compassSet':
@@ -1265,7 +1265,20 @@ function convertToShape(el) {
   if (!shape) return;
   checkpoint();
   const idx = board.elements.indexOf(el);
-  board.elements[idx] = { id: newId(), color: el.color, width: el.width, ...shape };
+  if (el.brush) {
+    // Özel fırçalı çizgi vektör şekle çevrilmez (efekt kaybolurdu); aynı fırçayla şeklin
+    // kenarı yeniden çizilir. Eski points dizisi değiştirilmez (geri alma buna dayanır).
+    let len = 0;
+    for (let i = 1; i < el.points.length; i++) {
+      len += Math.hypot(el.points[i][0] - el.points[i - 1][0], el.points[i][1] - el.points[i - 1][1]);
+    }
+    const step = Math.min(6, Math.max(1, len / Math.max(1, el.points.length - 1)));
+    const avgP = el.points.reduce((s, p) => s + (p[2] ?? 0.5), 0) / el.points.length;
+    const points = shapeToPoints(shape, step).map(([x, y]) => [x, y, avgP]);
+    board.elements[idx] = { ...el, id: newId(), points };
+  } else {
+    board.elements[idx] = { id: newId(), color: el.color, width: el.width, ...shape };
+  }
   toast('Şekle dönüştürüldü — el çizimine dönmek için Ctrl+Z');
 }
 
@@ -2106,7 +2119,7 @@ function propsContext() {
       colors: brush.noColor ? null : INK_COLORS,
       widths: brush.id === 'tape' ? TAPE_WIDTHS : PEN_WIDTHS,
       brushes: true,
-      toShape: brush.id === 'normal',
+      toShape: brush.id !== 'arrow' && brush.id !== 'dashedarrow',
       values: styles.pen,
     };
   }
@@ -2791,7 +2804,7 @@ async function handleCommand(cmd) {
 }
 
 api.onMenu(handleCommand);
-api.onOpenPath(async (p) => {
+async function openBoardPath(p) {
   commitEditor();
   if (!(await leaveBoard())) return;
   const res = await api.openPath(p);
@@ -2800,7 +2813,8 @@ api.onOpenPath(async (p) => {
     closeGallery();
     toast('Tahta açıldı');
   }
-});
+}
+api.onOpenPath(openBoardPath);
 
 // Başka bir bilgisayarda (Google Drive senkronuyla) güncellenen tahtayı pencereye dönünce yükler.
 // Kaydedilmemiş değişiklik varsa dokunmayız; kayıt sırasında çakışma kopyası oluşur.
@@ -3741,6 +3755,13 @@ $('#imageInput').addEventListener('change', (e) => {
 document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', (e) => {
   e.preventDefault();
+  // Masaüstünden sürüklenen .tahta dosyası: tahtayı aç (galeri açıkken de çalışır)
+  const boardFile = [...(e.dataTransfer?.files || [])].find((f) => /\.tahta$/i.test(f.name));
+  if (boardFile && !obsidianPickerOpen() && !pdfDialogOpen() && !exportDialogOpen()) {
+    const p = api.pathForFile(boardFile);
+    if (p) openBoardPath(p);
+    return;
+  }
   if (overlayOpen()) return;
   if (e.dataTransfer?.files.length) insertImageFiles(e.dataTransfer.files, toWorld(e.clientX, e.clientY));
 });
