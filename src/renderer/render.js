@@ -1,5 +1,11 @@
 // Öğeleri ve arka planı tuvale çizer.
 import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, arrowHeadSize, normRect, BRUSH_WIDTH } from './geometry.js';
+import { compileFunction, functionLabel } from './mathexpr.js';
+
+// Açılmış gizleme bantlarının kimlikleri. Dosyaya kaydedilmez: tahta her açıldığında bantlar kapalıdır.
+export const revealedCovers = new Set();
+// Öğrenci modu kapalıyken formül resimleri yerine düz metin çizilir.
+export const renderOpts = { math: true };
 
 const imageCache = new Map();
 let onImageLoad = () => {};
@@ -410,6 +416,14 @@ export function drawElement(ctx, el, hideText = false) {
 
     case 'text': {
       if (hideText) break;
+      // Formüllü metin ($…$) ana süreçte KaTeX ile resme çevrilir; resim yazıyla eşleşiyorsa o çizilir.
+      if (renderOpts.math && el.math?.src && el.math.text === el.text) {
+        const img = getImage(el.math.src);
+        if (img.complete && img.naturalWidth) {
+          ctx.drawImage(img, el.x, el.y, el.w, el.h);
+          break;
+        }
+      }
       ctx.fillStyle = el.color;
       ctx.font = font(el.fontSize);
       ctx.textBaseline = 'top';
@@ -451,8 +465,208 @@ export function drawElement(ctx, el, hideText = false) {
       }
       break;
     }
+
+    case 'cover':
+      drawCover(ctx, el);
+      break;
+
+    case 'axes':
+      drawAxes(ctx, el);
+      break;
   }
   ctx.restore();
+}
+
+// Gizleme bandı: kapalıyken altını tamamen örten desenli şerit, açıkken yalnızca kesikli çerçeve.
+function drawCover(ctx, el) {
+  const b = normRect(el.x, el.y, el.w, el.h);
+  const r = Math.min(6, b.w / 2, b.h / 2);
+  if (revealedCovers.has(el.id)) {
+    roundRectPath(ctx, b.x, b.y, b.w, b.h, r);
+    ctx.fillStyle = hexToRgba(el.color, 0.07);
+    ctx.fill();
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = hexToRgba(el.color, 0.65);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    return;
+  }
+  ctx.shadowColor = 'rgba(0,0,0,0.15)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+  roundRectPath(ctx, b.x, b.y, b.w, b.h, r);
+  ctx.fillStyle = el.color;
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = tapePattern(ctx);
+  ctx.fill();
+  // Ortadaki soru işareti bandın altında bir şey saklandığını belli eder.
+  const size = Math.min(b.h * 0.55, b.w * 0.5, 30);
+  if (size >= 9) {
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = `600 ${size}px ${FONT_FAMILY}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', b.x + b.w / 2, b.y + b.h / 2 + size * 0.04);
+  }
+}
+
+// Fonksiyon ifadeleri bir kez derlenir.
+const fnCache = new Map();
+function compiled(expr) {
+  let c = fnCache.get(expr);
+  if (!c) {
+    c = compileFunction(expr);
+    fnCache.set(expr, c);
+  }
+  return c.fn || null;
+}
+
+// Etiketlerin birbirine girmemesi için kaç birimde bir sayı yazılacağı.
+function labelStep(unit) {
+  for (const k of [1, 2, 5, 10, 20, 50, 100, 200, 500]) if (unit * k >= 26) return k;
+  return 1000;
+}
+
+function arrowTip(ctx, x, y, angle, size) {
+  ctx.beginPath();
+  ctx.moveTo(x - size * Math.cos(angle - 0.45), y - size * Math.sin(angle - 0.45));
+  ctx.lineTo(x, y);
+  ctx.lineTo(x - size * Math.cos(angle + 0.45), y - size * Math.sin(angle + 0.45));
+  ctx.stroke();
+}
+
+// Koordinat sistemi: (ox, oy) başlangıç noktası, unit bir birimin dünya uzunluğu; y yukarı doğru artar.
+function drawAxes(ctx, el) {
+  const b = normRect(el.x, el.y, el.w, el.h);
+  const u = el.unit;
+  const { ox, oy } = el;
+  ctx.beginPath();
+  ctx.rect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+  ctx.clip();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const i0 = Math.ceil((b.x - ox) / u);
+  const i1 = Math.floor((b.x + b.w - ox) / u);
+  const j0 = Math.ceil((b.y - oy) / u);
+  const j1 = Math.floor((b.y + b.h - oy) / u);
+
+  if (el.grid && i1 - i0 < 400 && j1 - j0 < 400) {
+    ctx.strokeStyle = hexToRgba(el.color, 0.13);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = i0; i <= i1; i++) {
+      ctx.moveTo(ox + i * u, b.y);
+      ctx.lineTo(ox + i * u, b.y + b.h);
+    }
+    for (let j = j0; j <= j1; j++) {
+      ctx.moveTo(b.x, oy + j * u);
+      ctx.lineTo(b.x + b.w, oy + j * u);
+    }
+    ctx.stroke();
+  }
+
+  const fs = Math.max(10, Math.min(16, u * 0.34));
+  const step = labelStep(u);
+  const tick = Math.min(6, u * 0.18);
+  const hasX = oy >= b.y && oy <= b.y + b.h;
+  const hasY = ox >= b.x && ox <= b.x + b.w;
+  ctx.strokeStyle = el.color;
+  ctx.fillStyle = el.color;
+  ctx.lineWidth = 2;
+  ctx.font = `${fs}px ${FONT_FAMILY}`;
+  if (hasX) {
+    ctx.beginPath();
+    ctx.moveTo(b.x, oy);
+    ctx.lineTo(b.x + b.w, oy);
+    ctx.stroke();
+    arrowTip(ctx, b.x + b.w, oy, 0, 11);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = i0; i <= i1; i++) {
+      if (!i || ox + i * u > b.x + b.w - 14) continue;
+      ctx.moveTo(ox + i * u, oy - tick);
+      ctx.lineTo(ox + i * u, oy + tick);
+    }
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let i = Math.ceil(i0 / step) * step; i <= i1; i += step) {
+      if (i && ox + i * u <= b.x + b.w - 18) ctx.fillText(String(i), ox + i * u, oy + tick + 3);
+    }
+    ctx.font = `italic 600 ${fs * 1.15}px ${FONT_FAMILY}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('x', b.x + b.w - 4, oy - 8);
+    ctx.font = `${fs}px ${FONT_FAMILY}`;
+  }
+  if (hasY) {
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ox, b.y + b.h);
+    ctx.lineTo(ox, b.y);
+    ctx.stroke();
+    arrowTip(ctx, ox, b.y, -Math.PI / 2, 11);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let j = j0; j <= j1; j++) {
+      if (!j || oy + j * u < b.y + 14) continue;
+      ctx.moveTo(ox - tick, oy + j * u);
+      ctx.lineTo(ox + tick, oy + j * u);
+    }
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let j = Math.ceil(j0 / step) * step; j <= j1; j += step) {
+      if (j && oy + j * u >= b.y + 18) ctx.fillText(String(-j), ox - tick - 4, oy + j * u);
+    }
+    ctx.font = `italic 600 ${fs * 1.15}px ${FONT_FAMILY}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('y', ox + 9, b.y + 2);
+    ctx.font = `${fs}px ${FONT_FAMILY}`;
+  }
+  if (hasX && hasY) {
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('0', ox - 4, oy + 3);
+  }
+
+  // Fonksiyon grafikleri: kutu genişliği boyunca örneklenir; tanımsız yerlerde ve
+  // dikey asimptotlarda (ör. tan, 1/x) çizgi kesilir.
+  const fns = el.fns || [];
+  const n = Math.min(3000, Math.max(60, Math.ceil(b.w / 1.5)));
+  fns.forEach((fn) => {
+    const f = compiled(fn.expr);
+    if (!f) return;
+    ctx.strokeStyle = fn.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    let down = false;
+    let prev = 0;
+    for (let s = 0; s <= n; s++) {
+      const wx = b.x + (b.w * s) / n;
+      const wy = oy - f((wx - ox) / u) * u;
+      if (!Number.isFinite(wy) || Math.abs(wy - (b.y + b.h / 2)) > b.h * 20) {
+        down = false;
+        continue;
+      }
+      if (down && Math.abs(wy - prev) > b.h * 1.5) down = false;
+      if (down) ctx.lineTo(wx, wy);
+      else ctx.moveTo(wx, wy);
+      down = true;
+      prev = wy;
+    }
+    ctx.stroke();
+  });
+  // Lejant: sol üstte her fonksiyon kendi renginde.
+  ctx.font = `600 ${fs}px ${FONT_FAMILY}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  fns.forEach((fn, k) => {
+    ctx.fillStyle = fn.color;
+    ctx.fillText(functionLabel(fn.expr), b.x + 6, b.y + 6 + k * fs * 1.4);
+  });
 }
 
 // Arka plan deseni ekran koordinatlarında çizilir; böylece tuval sonsuz görünür.

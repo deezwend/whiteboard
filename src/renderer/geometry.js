@@ -268,6 +268,7 @@ export function translate(el, dx, dy) {
     el.x1 += dx; el.y1 += dy; el.x2 += dx; el.y2 += dy;
   } else {
     el.x += dx; el.y += dy;
+    if (el.type === 'axes') { el.ox += dx; el.oy += dy; }
   }
 }
 
@@ -297,6 +298,14 @@ export function scaleFrom(el, orig, ax, ay, sx, sy) {
       el.h = orig.h * s;
       if (sx < 0) el.x -= el.w;
       if (sy < 0) el.y -= el.h;
+      break;
+    }
+    case 'axes': {
+      // Kutu ve başlangıç noktası birlikte ölçeklenir; birim uzunluk oranla büyür.
+      Object.assign(el, normRect(fx(orig.x), fy(orig.y), orig.w * sx, orig.h * sy));
+      el.ox = fx(orig.ox);
+      el.oy = fy(orig.oy);
+      el.unit = Math.max(4, orig.unit * uniform);
       break;
     }
     default: {

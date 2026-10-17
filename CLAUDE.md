@@ -39,7 +39,17 @@ When testing the real Electron app, launch with `--user-data-dir=<temp dir>` so 
 
 ### Data model
 
-A board is `{ version, background, bgColor, view: {x, y, zoom}, elements: [] }`. `serialize()` prepends a `thumb` (small JPEG data URL, or null) as the **first** key so the main process can read gallery thumbnails from the start of the file without parsing it; `loadBoard` drops it. Element types: `stroke` (`points: [[x, y, pressure]]`, `highlighter`, `pressure` flags), `line`, `arrow` (`x1,y1,x2,y2`), `rect`, `ellipse` (`x,y,w,h`, `fill: 'none'|'soft'|'solid'`), `polygon` (`points: [[x,y]]`), `text`, `note`, `image` (`src` is an embedded data URL). **Adding a new element type means updating every `switch (el.type)` in `geometry.js` and `render.js`, plus the type lists in `app.js` `propsContext`/`applyStyle`.**
+A board is `{ version, background, bgColor, view: {x, y, zoom}, elements: [] }`. `serialize()` prepends a `thumb` (small JPEG data URL, or null) as the **first** key so the main process can read gallery thumbnails from the start of the file without parsing it; `loadBoard` drops it. Element types: `stroke` (`points: [[x, y, pressure]]`, `highlighter`, `pressure` flags), `line`, `arrow` (`x1,y1,x2,y2`), `rect`, `ellipse` (`x,y,w,h`, `fill: 'none'|'soft'|'solid'`), `polygon` (`points: [[x,y]]`), `text`, `note`, `image` (`src` is an embedded data URL), `cover` (gizleme bandı, `x,y,w,h,color`; open/closed state is the in-memory `revealedCovers` set in `render.js`, never saved, so boards always open with covers closed), `axes` (koordinat sistemi: box `x,y,w,h`, origin `ox,oy`, `unit` = world length of 1, `grid`, `fns: [{expr, color}]` parsed by `mathexpr.js` — no eval, CSP forbids it; `fns` is replaced, never mutated). Any element may carry `locked: true` (not hit by click/lasso/eraser/Ctrl+A, not moved/resized; double-click selects it). A `text` element containing `$…$` gets `math: { src, text, key }`, a transparent PNG rendered in main by `mdrender.renderMath` (KaTeX black-on-white, luminance → alpha, tinted); `syncMath()` in `app.js` re-requests it when text/size/color change. **Adding a new element type means updating every `switch (el.type)` in `geometry.js` and `render.js`, plus the type lists in `app.js` `propsContext`/`applyStyle`.**
+
+### Search, crop, laser (not part of Öğrenci modu)
+
+- **Search** (Ctrl+F, `#searchBar`): `search = { q, hits, i }`, recomputed in `changed()`; highlights drawn in `drawOverlay`.
+- **Crop** (panel "Kırp" or double-click an image): `crop = { id, r }` in world coords; while active, pointerdown only edits the crop rect and keys other than Enter/Esc/undo are swallowed. Applying replaces `src` with the cropped pixels (destructive, one undo step).
+- **Laser** (`laser` tool): screen-space `laserTrail` that fades in `drawLaser`; never saved.
+
+### Öğrenci modu
+
+The menu checkbox "Öğrenci modu" (`studentMode` in prefs, default off) gates the study features: protractor (`protractor.js`, screen-space overlay like the ruler), compass tool (`compass` state in world coords), cover tool, axes, locking UI, formula rendering, and PDF export / print (`export:pdf` / `export:print` in main: the renderer slices the board into A4 JPEG pages, main puts them in a temp HTML page in a hidden window and calls `printToPDF` / `print`). Gated markup has class `student-only` (hidden via `body:not(.student)`); gated tool keys/commands are `STUDENT_TARGETS` / `STUDENT_COMMANDS` in `app.js`. Existing covers/axes/locked elements keep working when the mode is off.
 
 ### Coordinates
 

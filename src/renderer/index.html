@@ -32,12 +32,18 @@
       <button class="tool" data-tool="tempHighlighter" title="Geçici fosforlu kalem — basılı tutarken kalır, bırakınca söner">
         <svg viewBox="0 0 24 24"><path d="M9 11l-5 5v4h4l5-5"/><path d="M9 11l6-6 4 4-6 6z"/><path d="M3 21h2M8 21h1M12 21h0.5" class="accent"/></svg>
       </button>
+      <button class="tool" data-tool="laser" title="Lazer işaretçi — anlatırken göster; basılı tutunca kısa süre sonra sönen iz bırakır">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" class="laser"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
+      </button>
     </div>
     <button class="tool" data-tool="eraser" title="Silgi">
       <svg viewBox="0 0 24 24"><path d="M7 21h12"/><path d="M5.5 15.5l9-9a2 2 0 012.8 0l2.2 2.2a2 2 0 010 2.8L12 19H8z"/><path d="M9 12l5 5"/></svg>
     </button>
     <button class="tool" data-action="ruler" title="Cetvel — sürükle: taşı, düğme veya tekerlek: döndür, kenarı boyunca kalemle düz çiz">
       <svg viewBox="0 0 24 24"><path d="M3 15.5L15.5 3 21 8.5 8.5 21z"/><path d="M7 11.5l1.8 1.8M9.5 9l2.5 2.5M12 6.5l1.8 1.8M14.5 4l2.5 2.5"/></svg>
+    </button>
+    <button class="tool student-only" data-action="protractor" title="Açıölçer — sürükle: taşı, mavi/kırmızı tutamaçlar: açıyı ölç, yayın dışından kalemle: yay çiz">
+      <svg viewBox="0 0 24 24"><path d="M2.5 17.5a9.5 9.5 0 0119 0z"/><path d="M12 17.5L17 10"/><path d="M6 17.5a6 6 0 0112 0"/></svg>
     </button>
     <span class="sep"></span>
     <div class="tgroup" data-group="shape" data-title="Şekiller">
@@ -53,14 +59,20 @@
       <button class="tool" data-tool="arrow" title="Ok">
         <svg viewBox="0 0 24 24"><path d="M5 19L19 5M10 5h9v9"/></svg>
       </button>
+      <button class="tool student-only" data-tool="compass" title="Pergel — merkezden sürükleyerek yarıçapı belirle, sonra sürükleyerek yay ya da çember çiz">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="4.5" r="1.6"/><path d="M11 6.2L6 20M13 6.2l5 13.8M8.3 13.5h7.4"/></svg>
+      </button>
     </div>
     <span class="sep"></span>
-    <div class="tgroup" data-group="text" data-title="Metin ve not">
+    <div class="tgroup" data-group="text" data-title="Metin, not ve bant">
       <button class="tool" data-tool="text" title="Metin">
         <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
       </button>
       <button class="tool" data-tool="note" title="Yapışkan not">
         <svg viewBox="0 0 24 24"><path d="M4 4h16v10l-6 6H4z"/><path d="M14 20v-6h6"/></svg>
+      </button>
+      <button class="tool student-only" data-tool="cover" title="Gizleme bandı — cevabın üstüne bant çek, dokununca açılır / kapanır">
+        <svg viewBox="0 0 24 24"><rect x="2.5" y="7.5" width="19" height="9" rx="1.5"/><path d="M7 7.5l-2.5 9M12 7.5l-2.5 9M17 7.5l-2.5 9"/></svg>
       </button>
     </div>
     <div class="tgroup" data-group="insert" data-title="Ekle">
@@ -69,6 +81,9 @@
       </button>
       <button class="tool" data-action="obsidian" title="Obsidian'dan ekle — bir notun başlığını, bloğunu ya da tamamını ekler">
         <svg viewBox="0 0 24 24"><path d="M9.5 3L5 9.5l2 8.5 6.5 3.5 4.5-6-1.5-8z"/><path d="M9.5 3l1 8 5 1M7 18l3.5-7"/></svg>
+      </button>
+      <button class="tool student-only" data-action="axes" title="Koordinat sistemi — eksenler ve fonksiyon grafikleri">
+        <svg viewBox="0 0 24 24"><path d="M4 21V3M2 5.5L4 3l2 2.5M3 20h18M18.5 18l2.5 2-2.5 2"/><path d="M6.5 17c2.5-9 6-11 12-4"/></svg>
       </button>
     </div>
     <span class="sep"></span>
@@ -100,14 +115,37 @@
       <button class="chip" data-eraser-mode="partial" title="Yalnızca silginin geçtiği kısmı siler">Kısmi</button>
       <button class="chip" data-erase-all title="Açıkken silgi notları ve resimleri de siler">Not ve resimleri de sil</button>
     </div>
+    <div class="row" id="coverRow">
+      <button class="chip" data-cover="toggle" title="Seçili bantları açar / kapatır (çift tık da açar / kapatır)">Aç / kapat</button>
+      <button class="chip" data-cover="hideAll" title="Tahtadaki bütün bantları kapatır">Hepsini kapat</button>
+      <button class="chip" data-cover="showAll" title="Tahtadaki bütün bantları açar">Hepsini aç</button>
+    </div>
+    <div class="row" id="compassRow">
+      <button class="chip" data-compass="reset" title="Pergeli kaldırır; sonraki sürükleme yeni merkez ve yarıçap belirler (Esc)">Yeni merkez</button>
+    </div>
+    <div class="row" id="axesRow">
+      <button class="chip" data-axes-grid title="Birim kareleri gösterir">Izgara</button>
+      <input id="fnInput" type="text" placeholder="Fonksiyon: x^2 - 2x + 1" spellcheck="false" autocomplete="off" />
+      <button class="chip" data-axes-add title="Fonksiyonun grafiğini çizer (Enter)">Çiz</button>
+    </div>
+    <div class="row" id="fnList"></div>
     <div class="row" id="obsidianRow">
       <button class="chip" data-obsidian="refresh" title="Seçili bölümleri Obsidian'daki güncel hâlleriyle yeniden oluşturur">Kaynaktan yenile</button>
       <button class="chip" data-obsidian="open" title="Notu Obsidian'da bu bölümde açar (çift tık da açar)">Obsidian'da aç</button>
+    </div>
+    <div class="row" id="imageRow">
+      <button class="chip" data-crop="start" title="Resmin bir bölümünü kırpar (resme çift tıklamak da kırpar)">Kırp</button>
+    </div>
+    <div class="row" id="cropRow">
+      <button class="chip selected" data-crop="apply" title="Kırpmayı uygula (Enter)">Uygula</button>
+      <button class="chip" data-crop="reset" title="Çerçeveyi resmin tamamına döndür">Sıfırla</button>
+      <button class="chip" data-crop="cancel" title="Vazgeç (Esc)">Vazgeç</button>
     </div>
     <div class="row" id="arrangeRow">
       <button class="chip" data-arrange="front" title="Öne getir ( ] )">Öne</button>
       <button class="chip" data-arrange="back" title="Arkaya gönder ( [ )">Arkaya</button>
       <button class="chip" data-arrange="duplicate" title="Çoğalt (Ctrl+D)">Çoğalt</button>
+      <button class="chip" data-arrange="lock" title="Kilitli nesne taşınmaz, silinmez, tıklamayla seçilmez; çift tıklayınca seçilir (Ctrl+L)">Kilitle</button>
       <button class="chip danger" data-arrange="delete" title="Sil (Delete)">Sil</button>
     </div>
     <!-- Alt kenardaki sekme: paneli gizler/gösterir; gizliyken araç çubuğunun altında kalır -->
@@ -138,14 +176,19 @@
     <button data-cmd="open">Aç… <kbd>Ctrl+O</kbd></button>
     <button data-cmd="saveAs">Farklı kaydet… <kbd>Ctrl+Shift+S</kbd></button>
     <button data-cmd="exportPng">PNG olarak dışa aktar <kbd>Ctrl+E</kbd></button>
+    <button class="student-only" data-cmd="exportPdf">PDF olarak dışa aktar… <kbd>Ctrl+Shift+E</kbd></button>
+    <button class="student-only" data-cmd="print">Yazdır… <kbd>Ctrl+P</kbd></button>
     <button data-cmd="obsidian">Obsidian'dan ekle… <kbd>B</kbd></button>
     <button data-cmd="obsidianRefreshAll">Obsidian bölümlerini yenile</button>
     <button data-cmd="showFolder">Dosya konumunu göster</button>
     <button data-cmd="createVault">Yeni vault oluştur…</button>
     <button data-cmd="openVault">Klasörü vault olarak aç…</button>
+    <button class="student-only" data-cmd="coversHide">Bütün bantları kapat</button>
+    <button class="student-only" data-cmd="unlockAll">Bütün kilitleri aç</button>
     <button data-cmd="clear">Tahtayı temizle</button>
     <hr />
     <button id="autoSaveToggle" data-autosave role="menuitemcheckbox" title="Kapalıyken değişiklikler yalnızca Ctrl+S ile kaydedilir">Otomatik kaydet <span class="check"></span></button>
+    <button id="studentToggle" data-student role="menuitemcheckbox" title="Açıölçer, pergel, gizleme bandı, koordinat sistemi, kilitleme, formüller ($…$), PDF ve yazdırma">Öğrenci modu <span class="check"></span></button>
     <div class="menu-label">Arka plan deseni</div>
     <div class="row" id="bgPatternRow">
       <button class="chip" data-bg="none">Boş</button>
@@ -177,6 +220,16 @@
     <button class="tool" data-action="zoomFit" title="Tümünü sığdır (Ctrl+1)">
       <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
     </button>
+  </div>
+
+  <!-- Sağ üst: tahtada arama (Ctrl+F) -->
+  <div id="searchBar" class="panel hidden">
+    <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg>
+    <input id="searchInput" type="search" placeholder="Tahtada ara…" spellcheck="false" autocomplete="off" />
+    <span id="searchCount"></span>
+    <button class="tool" data-search="prev" title="Önceki (Shift+Enter)"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+    <button class="tool" data-search="next" title="Sonraki (Enter)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="tool" data-search="close" title="Kapat (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
 
   <div id="toast" class="hidden"></div>
@@ -222,10 +275,38 @@
         <span><input type="number" id="pdfFrom" min="1" value="1" />. sayfadan başlayarak</span>
         <span><input type="number" id="pdfTake" min="1" value="5" /> sayfa</span>
       </label>
+      <label class="pdf-opt student-only">
+        <input type="checkbox" id="pdfLock" />
+        <span>Sayfaları kilitle — üzerine yazarken kaymaz, Seç aracıyla yanlışlıkla taşınmaz</span>
+      </label>
       <div id="pdfSummary" class="muted"></div>
       <div class="pdf-actions">
         <button type="button" class="chip" id="pdfCancel">Vazgeç <kbd>Esc</kbd></button>
         <button type="submit" class="chip selected" id="pdfOk">Ekle <kbd>Enter</kbd></button>
+      </div>
+    </form>
+  </div>
+
+  <!-- PDF olarak dışa aktarma ve yazdırma seçenekleri -->
+  <div id="exportDlg" class="hidden">
+    <form class="panel pdf-card" id="exportForm">
+      <h2 id="exportTitle">PDF olarak dışa aktar</h2>
+      <div class="menu-label">Ne aktarılsın?</div>
+      <label class="pdf-opt"><input type="radio" name="exScope" value="all" /><span>Tüm tahta</span></label>
+      <label class="pdf-opt" id="exScopeSel"><input type="radio" name="exScope" value="selection" /><span>Yalnızca seçili nesneler</span></label>
+      <div class="menu-label">Kâğıt</div>
+      <div class="pdf-pair">
+        <label class="pdf-opt"><input type="radio" name="exOrient" value="portrait" /><span>A4 dikey</span></label>
+        <label class="pdf-opt"><input type="radio" name="exOrient" value="landscape" /><span>A4 yatay</span></label>
+      </div>
+      <div class="menu-label">Yerleşim</div>
+      <label class="pdf-opt"><input type="radio" name="exFit" value="width" /><span>Genişliğe sığdır, uzunsa sayfalara böl</span></label>
+      <label class="pdf-opt"><input type="radio" name="exFit" value="page" /><span>Hepsini tek sayfaya sığdır</span></label>
+      <label class="pdf-opt"><input type="checkbox" id="exBg" /><span>Arka plan rengini ve desenini de bas</span></label>
+      <div id="exSummary" class="muted"></div>
+      <div class="pdf-actions">
+        <button type="button" class="chip" id="exCancel">Vazgeç <kbd>Esc</kbd></button>
+        <button type="submit" class="chip selected" id="exportOk">Kaydet… <kbd>Enter</kbd></button>
       </div>
     </form>
   </div>
@@ -247,6 +328,7 @@
           <button data-help-tab="insert">Resim, PDF, Obsidian</button>
           <button data-help-tab="boards">Tahtalar ve vault</button>
           <button data-help-tab="view">Görünüm ve dışa aktarma</button>
+          <button data-help-tab="student">Öğrenci modu</button>
           <button data-help-tab="keys">Kısayollar</button>
           <button data-help-tab="faq">Sorun giderme</button>
         </nav>
@@ -318,6 +400,9 @@
             <h3>Geçici fosforlu kalem <kbd>4</kbd> / <kbd>G</kbd></h3>
             <p>Sunum ve anlatım için işaretçi gibi kullan. Çizdiğin şey ekranda <b>basılı tuttuğun sürece kalır</b>, bırakınca yavaşça kaybolur. Tahtaya kaydedilmez ve geri alma listesine girmez.</p>
 
+            <h3>Lazer işaretçi <kbd>W</kbd></h3>
+            <p>Anlatırken ya da ekran paylaşırken göstermek için. İmleç kırmızı parlayan bir noktaya dönüşür; basılı tutup çizersen arkasında kısa süre görünüp sönen bir iz kalır. Tahtaya hiçbir şey eklenmez. Kalemler grubundadır.</p>
+
             <h3>Silgi <kbd>5</kbd> / <kbd>E</kbd></h3>
             <ul>
               <li><b>Bütün çizgi:</b> değdiğin çizgiyi tümüyle siler.</li>
@@ -375,6 +460,20 @@
             <ul>
               <li>Panelin alt kenarındaki <b>ok</b> paneli gizler. Gizliyken ok araç çubuğunun hemen altında kalır (yanındaki nokta seçili rengi gösterir); tıklayınca panel geri açılır.</li>
               <li>Okun yanındaki <b>raptiye</b> açıkken (varsayılan) panel yalnızca okla açılıp kapanır ve gizli bırakırsan başka araca geçince de gizli kalır. Raptiye kapalıyken panel tahtaya çizmeye başlayınca kendiliğinden gizlenir, araç değiştirince ya da bir nesne seçince yeniden açılır.</li>
+            </ul>
+
+            <h3>Tahtada arama <kbd>Ctrl+F</kbd></h3>
+            <ul>
+              <li>Sağ üstte arama kutusu açılır. Metinlerde, yapışkan notlarda, Obsidian bölümlerinin başlıklarında ve koordinat sistemindeki fonksiyonlarda arar.</li>
+              <li>Bulunan yerler sarı çerçeveyle işaretlenir, sıradaki ekranın ortasına gelir. <kbd>Enter</kbd> sonraki, <kbd>Shift+Enter</kbd> önceki; <kbd>Esc</kbd> kapatır.</li>
+              <li>Elle yazılmış (kalemle çizilmiş) yazılar aranamaz.</li>
+            </ul>
+
+            <h3>Resim kırpma</h3>
+            <ul>
+              <li>Bir resim (PDF sayfası, ekran görüntüsü) seçiliyken panelden <b>Kırp</b>'a bas ya da resme <b>çift tıkla</b>.</li>
+              <li>Beyaz çerçevenin kenar ve köşelerini sürükle, içinden tutup taşı. Dışarıda kalan kısım karartılır.</li>
+              <li><kbd>Enter</kbd> ya da <b>Uygula</b> kırpar, <kbd>Esc</kbd> ya da <b>Vazgeç</b> iptal eder. Kırpılan kısım dosyadan çıkar (tahta küçülür); <kbd>Ctrl+Z</kbd> resmi eski hâline getirir.</li>
             </ul>
 
             <h3>Geri al / yinele</h3>
@@ -497,6 +596,60 @@
 
             <h3>Tam ekran ve diğer</h3>
             <p>Üst menü çubuğu normalde gizlidir; <kbd>Alt</kbd> tuşuna basınca görünür. <b>Görünüm → Tam ekran</b> ile tam ekrana geçebilirsin.</p>
+          </section>
+
+          <section data-help-section="student">
+            <h3>Öğrenci modu</h3>
+            <p>Menüden (☰) <b>Öğrenci modu</b> onay kutusunu işaretleyince ders çalışmaya yönelik araçlar açılır: açıölçer, pergel, gizleme bandı, koordinat sistemi, kilitleme, formüller, PDF olarak dışa aktarma ve yazdırma. Kapatınca bu araçlar gizlenir; tahtaya daha önce eklediğin bant, grafik gibi nesneler yerinde kalır. Ayar bu bilgisayara özeldir.</p>
+
+            <h3>Kilitleme <kbd>Ctrl+L</kbd></h3>
+            <ul>
+              <li>Bir nesneyi seçip panelden <b>Kilitle</b>'ye bas. Kilitli nesne taşınmaz, boyutlandırılmaz, silgiyle silinmez, tıklamayla ve <kbd>Ctrl+A</kbd> ile seçilmez. Kementle üstündeki çizimleri rahatça seçebilirsin.</li>
+              <li>Kilitli nesneyi seçmek için Seç aracıyla üzerine <b>çift tıkla</b>; turuncu kesikli çerçeve çıkar. Panelden <b>Kilidi aç</b> ya da <kbd>Ctrl+L</kbd>.</li>
+              <li>PDF eklerken <b>Sayfaları kilitle</b> işaretliyse sayfalar kilitli gelir; üzerine hemen yazabilirsin.</li>
+              <li>Menüdeki <b>Bütün kilitleri aç</b> tahtadaki tüm kilitleri kaldırır.</li>
+            </ul>
+
+            <h3>Gizleme bandı <kbd>K</kbd></h3>
+            <p>Cevabın ya da formülün üstüne sürükleyerek desenli bir bant çek; altı tamamen kapanır. Kendini sınamak için:</p>
+            <ul>
+              <li>Banda <b>kalemle dokun</b> (ya da bant aracıyla tıkla, Seç aracıyla çift tıkla): bant açılır, yerinde kesikli bir çerçeve kalır.</li>
+              <li>Tekrar kapatmak için bant aracıyla tıkla ya da Seç aracıyla çift tıkla. Panelde <b>Hepsini kapat</b> / <b>Hepsini aç</b> var.</li>
+              <li>Tahta her açıldığında bütün bantlar kapalı gelir.</li>
+            </ul>
+
+            <h3>Açıölçer <kbd>Q</kbd></h3>
+            <ul>
+              <li>Cetvel gibi ekranda durur, tahtaya kaydedilmez. Gövdesinden sürükleyerek taşı; döndürme düğmesiyle ya da üstündeyken fare tekerleğiyle döndür.</li>
+              <li>Mavi ve kırmızı tutamaçları sürükleyerek iki kol arasındaki açıyı ölç (<kbd>Shift</kbd> ile 5°'lik adımlar). Açı ortada yazar.</li>
+              <li>Kalemi yayın hemen dışında başlatırsan çizgi yay boyunca çember parçası olarak çıkar.</li>
+            </ul>
+
+            <h3>Pergel <kbd>C</kbd></h3>
+            <ol>
+              <li>Merkezden dışarı sürükleyerek yarıçapı belirle. Yarıçap kare cinsinden yazar (kareli arka planın bir karesi).</li>
+              <li>Sonra herhangi bir yerde sürükle: kalem ucu merkezin çevresinde döner ve yay çizer. Tam tur ya da tek dokunuş düzgün bir çember bırakır.</li>
+              <li>Merkez tutamacından sürükleyerek pergeli taşı, uçtaki tutamaçla yarıçapı değiştir. <kbd>Shift</kbd>: merkez kare köşesine, yarıçap yarım karelere oturur.</li>
+              <li><kbd>Esc</kbd> ya da panelde <b>Yeni merkez</b>: pergeli sıfırlar.</li>
+            </ol>
+
+            <h3>Koordinat sistemi <kbd>X</kbd></h3>
+            <ul>
+              <li>Ekle grubundan ekle; eksenler kareli arka planla hizalıdır (1 birim = 1 kare).</li>
+              <li>Paneldeki kutuya fonksiyonu yazıp <kbd>Enter</kbd>: <code>x^2 - 2x - 3</code>, <code>2sin x</code>, <code>1/x</code>, <code>√(x+1)</code>, <code>ln x</code>, <code>e^x</code>, mutlak değer için <code>abs(x)</code>. Örtük çarpma (<code>2x</code>, <code>3(x-1)</code>), <code>π</code>, ondalık virgül desteklenir; açılar radyandır.</li>
+              <li>Her grafik ayrı renkte çizilir ve sol üstte yazar; panelde adına tıklayınca kaldırılır. <b>Izgara</b> birim kareleri gösterir.</li>
+            </ul>
+
+            <h3>Formüller</h3>
+            <p>Metin aracında formülü dolar işaretleri arasına yaz: <code>Alan $\pi r^2$</code> satır içi, <code>$$\frac{1}{2}$$</code> büyük formül. Yazmayı bitirince formül düzgün görünür (KaTeX). Düzenlerken kaynak yazı görünür. <code>$5 ile $10</code> gibi fiyatlar formül sayılmaz.</p>
+
+            <h3>PDF olarak dışa aktarma <kbd>Ctrl+Shift+E</kbd> ve yazdırma <kbd>Ctrl+P</kbd></h3>
+            <ul>
+              <li>Tüm tahtayı ya da seçili nesneleri A4 (dikey ya da yatay) sayfalara koyar.</li>
+              <li><b>Genişliğe sığdır</b>: uzun tahta sayfalara bölünür; sayfa sınırı mümkünse nesneleri kesmeyen bir boşluğa (ör. PDF sayfaları arasına) denk getirilir. <b>Tek sayfaya sığdır</b>: hepsi bir sayfaya küçültülür.</li>
+              <li>Mürekkep harcamamak için <b>Arka plan rengini ve desenini de bas</b> seçeneğini kapatabilirsin.</li>
+              <li>Gizleme bantları o anki hâlleriyle (açık / kapalı) basılır; kapalı bantlarla sınav kâğıdı çıkarabilirsin.</li>
+            </ul>
           </section>
 
           <section data-help-section="keys">

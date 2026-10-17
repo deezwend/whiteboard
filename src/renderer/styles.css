@@ -76,6 +76,8 @@ html, body {
 }
 
 .hidden { display: none !important; }
+/* Öğrenci modu kapalıyken öğrenci araçları gizlenir */
+body:not(.student) .student-only { display: none !important; }
 
 /* ----- Araç çubuğu ----- */
 #toolbar {
@@ -115,6 +117,33 @@ html, body {
   stroke-linejoin: round;
 }
 .tool svg .accent { stroke: #f2c200; stroke-width: 3; }
+.tool svg .laser { fill: #ff3b3b; stroke: #ff3b3b; }
+
+/* ----- Tahtada arama ----- */
+#searchBar {
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 4px 10px;
+}
+#searchBar > svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+#searchInput {
+  font: inherit;
+  font-size: 13px;
+  width: 190px;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+  user-select: text;
+}
+#searchCount { font-size: 12px; color: var(--muted); min-width: 44px; text-align: right; margin-right: 4px; white-space: nowrap; }
+#searchCount.none { color: var(--danger-fg); }
+#searchBar .tool { width: 30px; height: 30px; }
+#searchBar .tool svg { width: 17px; height: 17px; }
 /* Düğme köşesindeki kısayol rozeti (ör. P, H, R) */
 .tool .key {
   position: absolute;
@@ -431,8 +460,8 @@ kbd {
   box-shadow: var(--shadow);
 }
 
-/* ----- PDF sayfa seçimi ----- */
-#pdfPages {
+/* ----- PDF sayfa seçimi, PDF dışa aktarma / yazdırma ----- */
+#pdfPages, #exportDlg {
   position: fixed;
   inset: 0;
   background: rgba(20, 25, 40, 0.35);
@@ -482,6 +511,27 @@ kbd {
 #pdfSummary.error { color: var(--danger-fg); }
 .pdf-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .pdf-actions .chip:disabled { opacity: 0.5; cursor: default; }
+.pdf-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pdf-card .menu-label { padding: 2px 0 0; }
+
+/* ----- Koordinat sistemi: fonksiyon kutusu ve grafik listesi ----- */
+#fnInput {
+  font: inherit;
+  font-size: 13px;
+  width: 220px;
+  padding: 4px 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  background: var(--chip-bg);
+  color: var(--text);
+  outline: none;
+  user-select: text;
+}
+#fnInput:focus { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-shadow); }
+#fnInput.invalid { border-color: var(--danger-fg); }
+#fnList { max-width: 420px; }
+.fnchip { display: inline-flex; align-items: center; gap: 6px; }
+.fndot { width: 10px; height: 10px; border-radius: 50%; }
 
 #help {
   position: fixed;

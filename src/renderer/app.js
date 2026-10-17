@@ -1,12 +1,14 @@
 import {
   newId, bbox, unionBBox, hitTest, cloneEl, translate, scaleFrom,
-  insideLasso, splitByEraser, NOTE_PADDING,
+  insideLasso, splitByEraser, NOTE_PADDING, rectsIntersect,
 } from './geometry.js';
 import {
-  drawElement, drawBackground, measureText, wrappedHeight, setImageLoadCallback,
+  drawElement, drawBackground, measureText, wrappedHeight, setImageLoadCallback, revealedCovers, renderOpts, getImage,
 } from './render.js';
 import { recognizeShape } from './recognize.js';
 import { createRuler, rulerHit, nearEdge, projectOnEdge, snapAngle, drawRuler } from './ruler.js';
+import { createProtractor, protractorHit, nearArc, setArm, drawProtractor, PROT_R } from './protractor.js';
+import { compileFunction, functionLabel } from './mathexpr.js';
 import { openObsidianPicker } from './obsidian-picker.js';
 
 const api = window.api;
@@ -20,6 +22,13 @@ const $ = (s) => document.querySelector(s);
 const INK_COLORS = ['#1f2328', '#868e96', '#e03131', '#f08c00', '#2f9e44', '#1971c2', '#7048e8', '#c2255c', '#ffffff'];
 const HIGHLIGHT_COLORS = ['#ffd400', '#7cf29b', '#7ad7ff', '#ff9ad5', '#ffb15c', '#c9a7ff'];
 const NOTE_COLORS = ['#fff3a3', '#ffd6e0', '#c9f2d0', '#cfe6ff', '#e5d9ff', '#ffe0b8'];
+const COVER_COLORS = ['#4a7cf0', '#7048e8', '#e8590c', '#2f9e44', '#c2255c', '#495057'];
+// Koordinat sistemine eklenen fonksiyonların sırayla aldığı renkler.
+const FN_COLORS = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#7048e8', '#c2255c'];
+// Kareli arka planın bir karesi (dünya birimi); pergel ve koordinat sistemi bu birimi kullanır.
+const GRID_UNIT = 40;
+// Metindeki $…$ / $$…$$ formülleri (açılıştan sonra / kapanıştan önce boşluk olmaz, "$5 ile $10" formül değildir).
+const MATH_RE = /\$\$[^$]+?\$\$|\$[^\s$](?:[^$]*?[^\s$])?\$(?!\d)/;
 // Microsoft Whiteboard'a benzer arka plan paleti: açık tonlar, sonra koyu tonlar
 const BG_COLORS = [
   '#ffffff', '#f3f2f1', '#fdf6e3', '#fff4ce', '#e8f4e4', '#dff6f5',
@@ -65,9 +74,10 @@ const HANDLE = 7;
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
 const SELECT_COLOR = '#4a7cf0';
+const LOCK_COLOR = '#e8590c';
 const CLIP_MIME = 'application/x-beyaztahta';
 
-const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow'];
+const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow', 'compass'];
 // Araç kısayolları — Microsoft Whiteboard'daki gibi her araç tek tuşla seçilir; ayrıca üst
 // sıradaki sayı tuşları (1-9, 0) en sık kullanılan araçlara doğrudan erişir. 'key' düğmenin
 // köşesinde rozet olarak görünür, 'num' hızlı sayı tuşu, 'alt' ise eski alışkanlık için yedektir.
@@ -76,19 +86,27 @@ const SHORTCUTS = [
   { target: 'pen', key: 'p', num: '2' },
   { target: 'highlighter', key: 'h', num: '3' },
   { target: 'tempHighlighter', key: 'g', num: '4' },
+  { target: 'laser', key: 'w' },
   { target: 'eraser', key: 'e', num: '5' },
   { target: 'ruler', key: 'r', num: '6', alt: 'u' },
+  { target: 'protractor', key: 'q' },
   { target: 'rect', key: 'd', num: '7' },
   { target: 'ellipse', key: 'o', num: '8' },
   { target: 'line', key: 'l', num: '9' },
   { target: 'arrow', key: 'a', num: '0' },
+  { target: 'compass', key: 'c' },
   { target: 'text', key: 't' },
   { target: 'note', key: 'n' },
+  { target: 'cover', key: 'k' },
   { target: 'image', key: 'i' },
   { target: 'obsidian', key: 'b' },
+  { target: 'axes', key: 'x' },
 ];
-// 'ruler', 'image' ve 'obsidian' birer araç değil eylemdir; kısayol da bunları runAction'a yönlendirir.
-const ACTION_TARGETS = ['ruler', 'image', 'obsidian'];
+// Bunlar birer araç değil eylemdir; kısayol da bunları runAction'a yönlendirir.
+const ACTION_TARGETS = ['ruler', 'protractor', 'image', 'obsidian', 'axes'];
+// Yalnızca Öğrenci modu açıkken kullanılabilen araçlar ve komutlar.
+const STUDENT_TARGETS = ['protractor', 'compass', 'cover', 'axes'];
+const STUDENT_COMMANDS = ['exportPdf', 'print', 'unlockAll', 'coversHide', 'coversShow'];
 const DEFAULT_SHORTCUTS = SHORTCUTS.map((s) => ({ ...s }));
 const SLOTS = ['num', 'key', 'alt'];
 // Kullanıcının değiştirdiği kısayollar (localStorage 'shortcuts': { hedef: { key, num, alt } }).
@@ -131,8 +149,13 @@ const styles = {
   shape: { color: '#1f2328', width: 3, fill: 'none' },
   text: { color: '#1f2328', fontSize: 24 },
   note: { color: '#fff3a3', fontSize: 20 },
+  cover: { color: '#4a7cf0' },
   eraser: { mode: 'stroke', all: false }, // mode: 'stroke' (bütün çizgi) | 'partial' (kısmi)
 };
+// PDF eklerken sayfalar kilitlensin mi; PDF dışa aktarma / yazdırma seçenekleri.
+let pdfLock = true;
+let studentMode = false;
+let exportOpts = { orient: 'portrait', fit: 'width', bg: true };
 let tool = 'pen';
 // Her araç grubunda en son kullanılan araç (grup adı -> araç), düğmede o gösterilir.
 let groupPick = {};
@@ -157,6 +180,10 @@ const touches = new Map();
 // Tahtaya kaydedilmeyen geçici fosforlu kalem çizgileri: { el, fadeStart }.
 let tempStrokes = [];
 let ruler = null; // açıkken { cx, cy, angle } (ekran koordinatı)
+let protractor = null; // açıkken { cx, cy, angle, a1, a2 } (ekran koordinatı)
+let crop = null; // resim kırpılırken { id, r: { x, y, w, h } } (dünya koordinatı)
+let search = null; // tahtada arama açıkken { q, hits: [kimlik], i }
+let compass = null; // pergel kuruluyken { cx, cy, r, a } (dünya koordinatı; a: kalem ucunun açısı)
 let pinch = null;
 let dpr = window.devicePixelRatio || 1;
 
@@ -173,12 +200,15 @@ function loadPrefs() {
     if (p.groups) groupPick = p.groups;
     if (p.props) Object.assign(propsUi, p.props);
     if (typeof p.autoSave === 'boolean') autoSave = p.autoSave;
+    if (typeof p.pdfLock === 'boolean') pdfLock = p.pdfLock;
+    if (typeof p.studentMode === 'boolean') studentMode = p.studentMode;
+    if (p.exportOpts) Object.assign(exportOpts, p.exportOpts);
   } catch { /* tercihler isteğe bağlı */ }
 }
 
 function savePrefs() {
   try {
-    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick, props: propsUi, autoSave }));
+    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick, props: propsUi, autoSave, pdfLock, exportOpts, studentMode }));
   } catch { /* yoksay */ }
 }
 
@@ -215,6 +245,7 @@ function checkpoint() {
 
 function undo() {
   commitEditor();
+  crop = null;
   if (!undoStack.length) return;
   redoStack.push(snapshot());
   board.elements = undoStack.pop();
@@ -224,6 +255,7 @@ function undo() {
 
 function redo() {
   commitEditor();
+  crop = null;
   if (!redoStack.length) return;
   undoStack.push(snapshot());
   board.elements = redoStack.pop();
@@ -290,6 +322,41 @@ function setAutoSave(v) {
   toast(v ? 'Otomatik kaydetme açık' : 'Otomatik kaydetme kapalı — Ctrl+S ile kaydet');
 }
 
+// Öğrenci modu: açıölçer, pergel, gizleme bandı, koordinat sistemi, kilitleme, formüller, PDF ve
+// yazdırma. Kapalıyken araçlar gizlenir; tahtadaki bant, grafik gibi nesneler yerinde kalır.
+function setStudentMode(v) {
+  studentMode = v;
+  savePrefs();
+  applyStudentMode();
+  toast(v ? 'Öğrenci modu açık' : 'Öğrenci modu kapalı');
+}
+
+function applyStudentMode() {
+  document.body.classList.toggle('student', studentMode);
+  $('#studentToggle').setAttribute('aria-checked', String(studentMode));
+  renderOpts.math = studentMode;
+  if (!studentMode) {
+    protractor = null;
+    compass = null;
+    $('[data-action="protractor"]').classList.remove('active');
+    if (STUDENT_TARGETS.includes(tool)) setTool('pen');
+  }
+  // Grup düğmesi gizlenen bir aracı gösteriyorsa gruptaki ilk görünür araca geçer.
+  for (const grp of toolGroups) {
+    const pick = groupPick[grp.name];
+    showInGroup(grp, !studentMode && STUDENT_TARGETS.includes(pick) ? targetOf(grp.members[0]) : pick);
+  }
+  buildHelpKeys();
+  sceneCacheValid = false;
+  changed(false);
+}
+
+function studentOnly() {
+  if (studentMode) return true;
+  toast('Bu özellik Öğrenci modunda kullanılabilir — menüden (☰) aç');
+  return false;
+}
+
 function updateAutoSaveUI() {
   $('#autoSaveToggle').setAttribute('aria-checked', String(autoSave));
 }
@@ -339,6 +406,8 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 function changed(save = true) {
+  syncMath();
+  if (search) runSearch(false);
   requestRender();
   updateUndoButtons();
   updateProps();
@@ -354,12 +423,65 @@ function loadBoard(data) {
   undoStack.length = 0;
   redoStack.length = 0;
   selection.clear();
+  revealedCovers.clear();
+  compass = null;
+  crop = null;
   dirty = false;
   setSaveState('Kaydedildi');
   updateBgUI();
   changed(false);
   // Küçük resmi olmayan (eski) tahtalar galeride görünsün diye bir kez yeniden kaydedilir.
   if (autoSave && data && !data.thumb && board.elements.length) scheduleSave();
+}
+
+// ---------- Formüller ($…$) ----------
+// Formül içeren metin öğesi ana süreçte KaTeX ile şeffaf bir resme çevrilir ve öğenin "math"
+// alanında saklanır ({ src, text, key }). Resim, yazı/boyut/renk değişince yeniden üretilir;
+// o arada eski resim (yazı da değiştiyse düz metin) gösterilir.
+
+const mathTimers = new Map(); // öğe kimliği -> bekleyen istek zamanlayıcısı
+const mathKey = (el) => `${el.fontSize}|${el.color}`;
+
+function syncMath() {
+  if (!studentMode) return;
+  for (const el of board.elements) {
+    if (el.type !== 'text') continue;
+    if (!MATH_RE.test(el.text)) {
+      if (el.math) {
+        delete el.math;
+        Object.assign(el, measureText(el.text, el.fontSize));
+      }
+      continue;
+    }
+    if (el.math && el.math.text === el.text && el.math.key === mathKey(el)) continue;
+    requestMath(el);
+  }
+}
+
+// Boyutlandırırken art arda istek gitmesin diye kısa bir bekleme.
+function requestMath(el) {
+  const want = el.text + '\u0000' + mathKey(el);
+  const pending = mathTimers.get(el.id);
+  if (pending?.want === want) return;
+  if (pending) clearTimeout(pending.timer);
+  const timer = setTimeout(async () => {
+    const src = board.elements.find((e) => e.id === el.id);
+    if (!src || src.type !== 'text') return mathTimers.delete(el.id);
+    const { text, fontSize, color } = src;
+    const key = mathKey(src);
+    const r = await api.renderMath({ text, fontSize, color });
+    if (mathTimers.get(el.id)?.timer === timer) mathTimers.delete(el.id);
+    // Beklerken öğe silinmiş, geri alınmış ya da değişmiş olabilir: güncel nesne kimlikle bulunur.
+    const cur = board.elements.find((e) => e.id === el.id);
+    if (!cur || r?.error || cur.text !== text || mathKey(cur) !== key) return;
+    cur.math = { src: r.src, text, key };
+    cur.w = r.w;
+    cur.h = r.h;
+    sceneCacheValid = false;
+    requestRender();
+    if (autoSave) scheduleSave();
+  }, 180);
+  mathTimers.set(el.id, { want, timer });
 }
 
 // ---------- Çizim döngüsü ----------
@@ -405,7 +527,7 @@ function drawScene(target, skip) {
 }
 
 function render() {
-  const live = drag && (drag.kind === 'draw' || drag.kind === 'shape') ? drag.el : null;
+  const live = drag && (drag.kind === 'draw' || drag.kind === 'shape' || drag.kind === 'compassArc') ? drag.el : null;
   if (live && !drag.temp) {
     // Çizim sırasında sahnenin geri kalanını önbellekten kopyalayıp yalnız yeni çizgiyi çiziyoruz.
     if (!sceneCacheValid) {
@@ -446,7 +568,18 @@ function drawTempStrokes() {
 function drawOverlay() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const sel = selectedEls();
-  if (sel.length && !editing) {
+  if (crop) drawCropOverlay();
+  else if (sel.length && !editing && sel.some((el) => el.locked)) {
+    // Kilitli nesne taşınamaz, boyutlandırılamaz: tutamaçsız, kesikli turuncu çerçeve.
+    ctx.strokeStyle = LOCK_COLOR;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    for (const el of sel) {
+      const r = screenRect(bbox(el));
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+    ctx.setLineDash([]);
+  } else if (sel.length && !editing) {
     ctx.strokeStyle = SELECT_COLOR;
     ctx.lineWidth = 1;
     if (sel.length > 1) {
@@ -492,6 +625,10 @@ function drawOverlay() {
   }
 
   if (ruler) drawRuler(ctx, ruler);
+  if (protractor) drawProtractor(ctx, protractor);
+  if (activeTool() === 'compass') drawCompass();
+  drawSearchHits();
+  drawLaser();
 
   if (pointer && (activeTool() === 'eraser' || drag?.kind === 'erase')) {
     ctx.strokeStyle = 'rgba(60,60,60,0.8)';
@@ -516,7 +653,7 @@ function isSingleLine(sel) {
 
 function handlePositions() {
   const sel = selectedEls();
-  if (!sel.length) return {};
+  if (!sel.length || crop || sel.some((el) => el.locked)) return {};
   if (isSingleLine(sel)) {
     const el = sel[0];
     return { p1: toScreen(el.x1, el.y1), p2: toScreen(el.x2, el.y2) };
@@ -537,12 +674,39 @@ function hitHandle(sx, sy) {
   return null;
 }
 
-function topHit(w) {
+// Kilitli nesneler (ör. üzerine yazılan PDF sayfası) tıklamayla seçilmez; yalnızca çift tıklama
+// (includeLocked) onları bulur.
+function topHit(w, includeLocked = false) {
   const tol = 5 / board.view.zoom;
   for (let i = board.elements.length - 1; i >= 0; i--) {
-    if (hitTest(board.elements[i], w.x, w.y, tol)) return board.elements[i];
+    const el = board.elements[i];
+    if ((includeLocked || !el.locked) && hitTest(el, w.x, w.y, tol)) return el;
   }
   return null;
+}
+
+// Noktanın altındaki en üstteki gizleme bandı (üstünde çizgiler olsa bile).
+function coverAt(w) {
+  for (let i = board.elements.length - 1; i >= 0; i--) {
+    const el = board.elements[i];
+    if (el.type === 'cover' && hitTest(el, w.x, w.y, 0)) return el;
+  }
+  return null;
+}
+
+function toggleCover(el, show = !revealedCovers.has(el.id)) {
+  if (show) revealedCovers.add(el.id);
+  else revealedCovers.delete(el.id);
+  sceneCacheValid = false;
+  requestRender();
+  updateProps();
+}
+
+function setAllCovers(show) {
+  const covers = board.elements.filter((el) => el.type === 'cover');
+  if (!covers.length) return toast('Tahtada gizleme bandı yok');
+  for (const el of covers) toggleCover(el, show);
+  toast(show ? 'Bütün bantlar açıldı' : 'Bütün bantlar kapatıldı');
 }
 
 function selectionIsEditable() {
@@ -651,6 +815,21 @@ canvas.addEventListener('pointerdown', (e) => {
   const penEraser = e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32));
   if (e.button !== 0 && !penEraser) return;
 
+  // Kırpma sürerken tahtaya basmak yalnızca kırpma çerçevesini değiştirir.
+  if (crop) {
+    const part = cropHit(e.clientX, e.clientY);
+    if (part) drag = { kind: 'crop', part, start: w, r0: { ...crop.r } };
+    return;
+  }
+  // Lazer işaretçi cetvel ve açıölçeri de taşımaz; yalnızca iz bırakır.
+  if (t === 'laser' && !penEraser) {
+    laserStroke++;
+    addLaserPoint(e.clientX, e.clientY);
+    drag = { kind: 'laser' };
+    requestRender();
+    return;
+  }
+
   // Cetvelin üzerine basmak, araç ne olursa olsun cetveli taşır/döndürür.
   const rh = ruler && !penEraser ? rulerHit(ruler, e.clientX, e.clientY) : null;
   if (rh === 'knob') {
@@ -659,6 +838,20 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   if (rh === 'body') {
     drag = { kind: 'rulerMove', sx: e.clientX, sy: e.clientY, cx: ruler.cx, cy: ruler.cy };
+    return;
+  }
+  // Açıölçer de cetvel gibi her araçta önceliklidir: kollar, döndürme düğmesi, gövde.
+  const ph = protractor && !penEraser ? protractorHit(protractor, e.clientX, e.clientY) : null;
+  if (ph === 'knob') {
+    drag = { kind: 'protRotate', a0: protractor.angle, p0: Math.atan2(e.clientY - protractor.cy, e.clientX - protractor.cx) };
+    return;
+  }
+  if (ph === 'arm1' || ph === 'arm2') {
+    drag = { kind: 'protArm', which: ph === 'arm1' ? 'a1' : 'a2' };
+    return;
+  }
+  if (ph === 'body') {
+    drag = { kind: 'protMove', sx: e.clientX, sy: e.clientY, cx: protractor.cx, cy: protractor.cy };
     return;
   }
 
@@ -722,6 +915,26 @@ canvas.addEventListener('pointerdown', (e) => {
       sceneCacheValid = false;
       break;
     }
+
+    case 'cover': {
+      // Var olan banda dokunmak onu açar/kapatır; boş yerde sürüklemek yeni bant çizer.
+      const hit = coverAt(w);
+      if (hit && !hit.locked) {
+        toggleCover(hit);
+        break;
+      }
+      checkpoint();
+      const el = { id: newId(), type: 'cover', x: w.x, y: w.y, w: 0, h: 0, color: styles.cover.color };
+      board.elements.push(el);
+      drag = { kind: 'shape', el, start: w };
+      autoHideProps();
+      sceneCacheValid = false;
+      break;
+    }
+
+    case 'compass':
+      startCompass(e, w);
+      break;
 
     case 'text': {
       const hit = topHit(w);
@@ -813,7 +1026,7 @@ canvas.addEventListener('pointermove', (e) => {
 
   if (!drag) {
     updateCursor(e);
-    if (activeTool() === 'eraser') requestRender();
+    if (activeTool() === 'eraser' || activeTool() === 'laser' || (activeTool() === 'compass' && !compass)) requestRender();
     return;
   }
 
@@ -822,6 +1035,16 @@ canvas.addEventListener('pointermove', (e) => {
     case 'pan':
       board.view.x = drag.vx + (e.clientX - drag.sx);
       board.view.y = drag.vy + (e.clientY - drag.sy);
+      break;
+
+    case 'laser': {
+      const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+      for (const ce of events.length ? events : [e]) addLaserPoint(ce.clientX, ce.clientY);
+      break;
+    }
+
+    case 'crop':
+      updateCrop(w);
       break;
 
     case 'draw': {
@@ -846,6 +1069,41 @@ canvas.addEventListener('pointermove', (e) => {
       break;
     }
 
+    case 'protMove':
+      protractor.cx = drag.cx + (e.clientX - drag.sx);
+      protractor.cy = drag.cy + (e.clientY - drag.sy);
+      break;
+
+    case 'protRotate': {
+      const a = drag.a0 + Math.atan2(e.clientY - protractor.cy, e.clientX - protractor.cx) - drag.p0;
+      const step = Math.PI / 12;
+      protractor.angle = e.shiftKey ? Math.round(a / step) * step : snapAngle(a);
+      break;
+    }
+
+    case 'protArm':
+      setArm(protractor, drag.which, e.clientX, e.clientY, e.shiftKey);
+      break;
+
+    case 'compassSet':
+    case 'compassRadius': {
+      const p = e.shiftKey ? snapRadius(w) : w;
+      compass.r = Math.hypot(p.x - compass.cx, p.y - compass.cy);
+      compass.a = Math.atan2(w.y - compass.cy, w.x - compass.cx);
+      break;
+    }
+
+    case 'compassMove': {
+      const c = e.shiftKey ? snapGrid(w) : w;
+      compass.cx = c.x;
+      compass.cy = c.y;
+      break;
+    }
+
+    case 'compassArc':
+      updateCompassArc(w);
+      break;
+
     case 'erase':
       eraseAlong(drag.last, w);
       drag.last = w;
@@ -858,7 +1116,7 @@ canvas.addEventListener('pointermove', (e) => {
       }
       const dx = w.x - drag.last.x;
       const dy = w.y - drag.last.y;
-      for (const el of selectedEls()) translate(el, dx, dy);
+      for (const el of selectedEls()) if (!el.locked) translate(el, dx, dy);
       drag.last = w;
       break;
     }
@@ -904,7 +1162,7 @@ canvas.addEventListener('pointermove', (e) => {
       drag.points.push([w.x, w.y]);
       selection = new Set(drag.base);
       if (drag.points.length > 2) {
-        for (const el of board.elements) if (insideLasso(el, drag.points)) selection.add(el.id);
+        for (const el of board.elements) if (!el.locked && insideLasso(el, drag.points)) selection.add(el.id);
       }
       break;
     }
@@ -937,9 +1195,30 @@ function endPointer(e) {
         if (t) t.fadeStart = performance.now();
         break;
       }
+      // Kapalı gizleme bandına kalemle dokunmak (çizmeden) bandı açar; nokta tahtaya eklenmez.
+      if (d.el.points.length === 1 && !d.usedStraight) {
+        const [x, y] = d.el.points[0];
+        const cover = coverAt({ x, y });
+        if (cover && !revealedCovers.has(cover.id)) {
+          board.elements.splice(board.elements.indexOf(d.el), 1);
+          undoStack.pop();
+          updateUndoButtons();
+          toggleCover(cover, true);
+          break;
+        }
+      }
       // Özel fırçalar şekle çevrilmez; çevrilince efekt kaybolurdu.
       if (!d.el.highlighter && !d.el.brush && !d.usedStraight && styles.pen.toShape) convertToShape(d.el);
       changed();
+      break;
+    case 'compassSet':
+      if (compass.r * board.view.zoom < 4) {
+        compass = null;
+        toast('Pergel: merkezden dışarı doğru sürükleyerek yarıçapı belirle');
+      }
+      break;
+    case 'compassArc':
+      endCompassArc(d);
       break;
     case 'shape': {
       const b = bbox(d.el);
@@ -995,7 +1274,7 @@ function cancelDrag() {
   if (drag.temp) {
     const t = tempStrokes.find((t) => t.el === drag.el);
     if (t) t.fadeStart = performance.now();
-  } else if (drag.kind === 'draw' || drag.kind === 'shape') {
+  } else if (drag.kind === 'draw' || drag.kind === 'shape' || drag.kind === 'compassArc') {
     board.elements.splice(board.elements.indexOf(drag.el), 1);
     undoStack.pop();
     updateUndoButtons();
@@ -1009,24 +1288,77 @@ canvas.addEventListener('mousedown', (e) => e.preventDefault());
 
 canvas.addEventListener('dblclick', (e) => {
   if (activeTool() !== 'select') return;
-  const hit = topHit(toWorld(e.clientX, e.clientY));
-  if (hit && (hit.type === 'text' || hit.type === 'note')) openEditor(hit, false);
+  const w = toWorld(e.clientX, e.clientY);
+  const hit = topHit(w);
+  if (hit?.type === 'cover') toggleCover(hit);
+  else if (hit && (hit.type === 'text' || hit.type === 'note')) openEditor(hit, false);
   else if (hit?.obsidian) openInObsidian(hit);
+  else if (hit?.type === 'image') {
+    selection = new Set([hit.id]);
+    startCrop();
+  }
+  else if (!hit) {
+    // Kilitli nesne yalnızca çift tıklamayla seçilir (kilidini açmak ya da silmek için).
+    const locked = topHit(w, true);
+    if (locked?.locked) {
+      selection = new Set([locked.id]);
+      updateProps();
+      requestRender();
+      toast('Kilitli nesne seçildi — panelden ya da Ctrl+L ile kilidini açabilirsin');
+    }
+  }
 });
 
-// Cetvel kenarının hemen yanında başlayan çizgi o kenar boyunca dümdüz çizilir.
+// Cetvel kenarının hemen yanında başlayan çizgi o kenar boyunca dümdüz çizilir;
+// açıölçerin yayının hemen dışında başlayan çizgi de yay boyunca çember parçası olur.
 function attachRuler(e) {
   const side = ruler ? nearEdge(ruler, e.clientX, e.clientY) : 0;
-  if (!side) return;
-  drag.rulerSide = side;
-  drag.rulerStart = { x: e.clientX, y: e.clientY };
+  if (side) {
+    drag.rulerSide = side;
+    drag.rulerStart = { x: e.clientX, y: e.clientY };
+  } else if (protractor && nearArc(protractor, e.clientX, e.clientY)) {
+    const a = Math.atan2(e.clientY - protractor.cy, e.clientX - protractor.cx);
+    drag.protArc = { a0: a, last: a, acc: 0 };
+  } else return;
   drag.usedStraight = true;
   drag.el.pressure = false;
+}
+
+// Açısal farkı (-π, π] aralığına getirir; yay çizerken açı ±π'den geçince sıçramasın.
+function angleDelta(a, b) {
+  let d = a - b;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d <= -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+// Merkezi (cx, cy) olan r yarıçaplı yayın a0'dan a0+acc'ye kadar noktaları (2°'lik adımlarla).
+function arcPoints(cx, cy, r, a0, acc, map = (x, y) => [x, y]) {
+  const n = Math.max(1, Math.ceil(Math.abs(acc) / (Math.PI / 90)));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = a0 + (acc * i) / n;
+    const [x, y] = map(cx + r * Math.cos(t), cy + r * Math.sin(t));
+    pts.push([x, y, 0.5]);
+  }
+  return pts;
 }
 
 // Kalem: Shift veya Ctrl basılıyken son noktadan itibaren dümdüz çizgi çizilir.
 function updateDraw(e, events) {
   const el = drag.el;
+  if (drag.protArc) {
+    const pa = drag.protArc;
+    const a = Math.atan2(e.clientY - protractor.cy, e.clientX - protractor.cx);
+    pa.acc = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, pa.acc + angleDelta(a, pa.last)));
+    pa.last = a;
+    const r = PROT_R + (el.width * board.view.zoom) / 2 + 1;
+    el.points = arcPoints(protractor.cx, protractor.cy, r, pa.a0, pa.acc, (x, y) => {
+      const p = toWorld(x, y);
+      return [p.x, p.y];
+    });
+    return;
+  }
   if (drag.rulerSide) {
     const off = (el.width * board.view.zoom) / 2 + 1;
     const a = projectOnEdge(ruler, drag.rulerStart.x, drag.rulerStart.y, drag.rulerSide, off);
@@ -1082,6 +1414,438 @@ function updateShape(w, shift) {
   }
 }
 
+// ---------- Tahtada arama (Ctrl+F) ----------
+// Metin, not, Obsidian bölümü başlığı ve fonksiyon ifadelerinde arar; eşleşmeler okunma sırasıyla
+// (yukarıdan aşağı) gezilir, bulunan nesne ekranın ortasına getirilir.
+
+const searchBar = $('#searchBar');
+const searchInput = $('#searchInput');
+
+function searchText(el) {
+  if (el.type === 'text' || el.type === 'note') return el.text;
+  if (el.obsidian) return el.obsidian.title || '';
+  if (el.type === 'axes') return (el.fns || []).map((f) => f.expr).join(' ');
+  return '';
+}
+
+function openSearch() {
+  commitEditor();
+  searchBar.classList.remove('hidden');
+  searchInput.focus();
+  searchInput.select();
+  if (searchInput.value.trim()) runSearch(false);
+}
+
+function closeSearch() {
+  searchBar.classList.add('hidden');
+  searchInput.blur();
+  search = null;
+  requestRender();
+}
+
+// jump: ilk eşleşmeye git. Tahta değişince (jump=false) liste yenilenir, sıradaki konum korunur.
+function runSearch(jump = true) {
+  const q = searchInput.value.trim().toLocaleLowerCase('tr');
+  if (!q) {
+    search = null;
+    updateSearchCount();
+    return requestRender();
+  }
+  const hits = board.elements
+    .filter((el) => searchText(el).toLocaleLowerCase('tr').includes(q))
+    .map((el) => ({ id: el.id, b: bbox(el) }))
+    .sort((a, b) => a.b.y - b.b.y || a.b.x - b.b.x)
+    .map((h) => h.id);
+  const keep = !jump && search?.q === q ? Math.min(search.i, Math.max(0, hits.length - 1)) : 0;
+  search = { q, hits, i: keep };
+  updateSearchCount();
+  if (jump && hits.length) focusSearchHit();
+  requestRender();
+}
+
+function stepSearch(d) {
+  if (!search?.hits.length) return;
+  const n = search.hits.length;
+  search.i = (search.i + d + n) % n;
+  focusSearchHit();
+}
+
+function updateSearchCount() {
+  const el = $('#searchCount');
+  const n = search?.hits.length || 0;
+  el.textContent = !search ? '' : n ? `${search.i + 1} / ${n}` : 'Bulunamadı';
+  el.classList.toggle('none', !!search && !n);
+}
+
+// Bulunan nesneyi ekranın ortasına getirir; ekrana sığmıyorsa uzaklaştırır.
+function focusSearchHit() {
+  const el = board.elements.find((x) => x.id === search.hits[search.i]);
+  if (!el) return;
+  const b = bbox(el);
+  const v = board.view;
+  const pad = 100;
+  if (b.w * v.zoom > innerWidth - pad * 2 || b.h * v.zoom > innerHeight - pad * 2) {
+    v.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, (innerWidth - pad * 2) / b.w, (innerHeight - pad * 2) / b.h));
+  }
+  v.x = innerWidth / 2 - (b.x + b.w / 2) * v.zoom;
+  v.y = innerHeight / 2 - (b.y + b.h / 2) * v.zoom;
+  sceneCacheValid = false;
+  scheduleViewSave();
+  updateSearchCount();
+  requestRender();
+}
+
+function drawSearchHits() {
+  if (!search?.hits.length) return;
+  const current = search.hits[search.i];
+  for (const el of board.elements) {
+    if (!search.hits.includes(el.id)) continue;
+    const r = screenRect(bbox(el));
+    const on = el.id === current;
+    ctx.fillStyle = on ? 'rgba(255, 170, 0, 0.18)' : 'rgba(255, 212, 0, 0.14)';
+    ctx.fillRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8);
+    ctx.strokeStyle = on ? '#f08c00' : 'rgba(240, 160, 0, 0.6)';
+    ctx.lineWidth = on ? 2.5 : 1.2;
+    ctx.strokeRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8);
+  }
+}
+
+searchInput.addEventListener('input', () => runSearch(true));
+searchInput.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    stepSearch(e.shiftKey ? -1 : 1);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeSearch();
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    searchInput.select();
+  }
+});
+searchBar.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-search]');
+  if (!b) return;
+  if (b.dataset.search === 'close') closeSearch();
+  else stepSearch(b.dataset.search === 'next' ? 1 : -1);
+});
+
+// ---------- Resim kırpma ----------
+// Tek bir resim seçiliyken panelden "Kırp" (ya da resme çift tıklama). Kırpma çerçevesi kenar ve
+// köşelerinden sürüklenir, içinden tutup taşınır; Enter uygular, Esc vazgeçer. Uygulanınca resim
+// yeni, kırpılmış bir resimle değiştirilir (Ctrl+Z eski hâline döndürür).
+
+const CROP_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+
+function startCrop() {
+  const el = selectedEls()[0];
+  if (!el || el.type !== 'image' || el.locked) return;
+  const img = getImage(el.src);
+  if (!img.complete || !img.naturalWidth) return toast('Resim henüz yüklenmedi');
+  crop = { id: el.id, r: { x: el.x, y: el.y, w: el.w, h: el.h } };
+  updateProps();
+  requestRender();
+  toast('Kırp: kenarları sürükle — Enter uygula, Esc vazgeç');
+}
+
+function cancelCrop() {
+  if (!crop) return;
+  crop = null;
+  updateProps();
+  requestRender();
+}
+
+function cropEl() {
+  return crop && board.elements.find((el) => el.id === crop.id);
+}
+
+function cropHandlePos() {
+  const r = screenRect(crop.r);
+  const xs = { w: r.x, c: r.x + r.w / 2, e: r.x + r.w };
+  const ys = { n: r.y, c: r.y + r.h / 2, s: r.y + r.h };
+  return Object.fromEntries(CROP_HANDLES.map((h) => [h, {
+    x: xs[h.includes('w') ? 'w' : h.includes('e') ? 'e' : 'c'],
+    y: ys[h.includes('n') ? 'n' : h.includes('s') ? 's' : 'c'],
+  }]));
+}
+
+function cropHit(sx, sy) {
+  for (const [name, p] of Object.entries(cropHandlePos())) {
+    if (Math.abs(sx - p.x) <= 10 && Math.abs(sy - p.y) <= 10) return name;
+  }
+  const r = screenRect(crop.r);
+  if (sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h) return 'move';
+  return null;
+}
+
+function updateCrop(w) {
+  const el = cropEl();
+  if (!el) return cancelCrop();
+  const b = { x: el.x, y: el.y, w: el.w, h: el.h };
+  const r0 = drag.r0;
+  const dx = w.x - drag.start.x;
+  const dy = w.y - drag.start.y;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  if (drag.part === 'move') {
+    crop.r = { ...r0, x: clamp(r0.x + dx, b.x, b.x + b.w - r0.w), y: clamp(r0.y + dy, b.y, b.y + b.h - r0.h) };
+    return;
+  }
+  const min = 12 / board.view.zoom;
+  let x1 = r0.x, y1 = r0.y, x2 = r0.x + r0.w, y2 = r0.y + r0.h;
+  const p = drag.part;
+  if (p.includes('w')) x1 = clamp(x1 + dx, b.x, x2 - min);
+  if (p.includes('e')) x2 = clamp(x2 + dx, x1 + min, b.x + b.w);
+  if (p.includes('n')) y1 = clamp(y1 + dy, b.y, y2 - min);
+  if (p.includes('s')) y2 = clamp(y2 + dy, y1 + min, b.y + b.h);
+  crop.r = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+function applyCrop() {
+  const el = cropEl();
+  if (!el) return cancelCrop();
+  const r = crop.r;
+  const same = Math.abs(r.x - el.x) < 0.01 && Math.abs(r.y - el.y) < 0.01 &&
+    Math.abs(r.w - el.w) < 0.01 && Math.abs(r.h - el.h) < 0.01;
+  crop = null;
+  if (same) {
+    updateProps();
+    return requestRender();
+  }
+  const img = getImage(el.src);
+  const kx = img.naturalWidth / el.w;
+  const ky = img.naturalHeight / el.h;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(r.w * kx));
+  c.height = Math.max(1, Math.round(r.h * ky));
+  c.getContext('2d').drawImage(img, (r.x - el.x) * kx, (r.y - el.y) * ky, r.w * kx, r.h * ky, 0, 0, c.width, c.height);
+  const jpeg = el.src.startsWith('data:image/jpeg');
+  checkpoint();
+  el.src = c.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.92);
+  Object.assign(el, r);
+  changed();
+  toast('Resim kırpıldı — eski hâli için Ctrl+Z');
+}
+
+function drawCropOverlay() {
+  const el = cropEl();
+  if (!el) return;
+  const b = screenRect({ x: el.x, y: el.y, w: el.w, h: el.h });
+  const r = screenRect(crop.r);
+  ctx.save();
+  ctx.fillStyle = 'rgba(20, 25, 40, 0.55)';
+  ctx.beginPath();
+  ctx.rect(b.x, b.y, b.w, b.h);
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.fill('evenodd');
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(b.x, b.y, b.w, b.h);
+  ctx.setLineDash([]);
+  // Üçte bir kılavuz çizgileri.
+  ctx.beginPath();
+  for (const f of [1 / 3, 2 / 3]) {
+    ctx.moveTo(r.x + r.w * f, r.y);
+    ctx.lineTo(r.x + r.w * f, r.y + r.h);
+    ctx.moveTo(r.x, r.y + r.h * f);
+    ctx.lineTo(r.x + r.w, r.y + r.h * f);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(r.x, r.y, r.w, r.h);
+  for (const p of Object.values(cropHandlePos())) {
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.rect(p.x - 5, p.y - 5, 10, 10);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function cropCursor(part) {
+  if (part === 'move') return 'move';
+  if (part === 'n' || part === 's') return 'ns-resize';
+  if (part === 'e' || part === 'w') return 'ew-resize';
+  return part === 'nw' || part === 'se' ? 'nwse-resize' : 'nesw-resize';
+}
+
+// ---------- Lazer işaretçi ----------
+// Sunum yaparken imleç kırmızı parlayan bir nokta olur; basılı tutup çizince arkasında kısa
+// süre görünüp sönen bir iz bırakır. Tahtaya kaydedilmez, geri alma listesine girmez.
+
+const LASER_FADE_MS = 700;
+let laserTrail = []; // { x, y, t, s } ekran koordinatı; s: hangi çizgiye ait olduğu
+let laserStroke = 0;
+
+function addLaserPoint(x, y) {
+  laserTrail.push({ x, y, t: performance.now(), s: laserStroke });
+}
+
+function drawLaser() {
+  const now = performance.now();
+  laserTrail = laserTrail.filter((p) => now - p.t < LASER_FADE_MS);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.shadowColor = 'rgba(255, 0, 0, 0.8)';
+  ctx.shadowBlur = 10;
+  for (let i = 1; i < laserTrail.length; i++) {
+    const a = laserTrail[i - 1];
+    const b = laserTrail[i];
+    if (a.s !== b.s) continue;
+    const k = 1 - (now - b.t) / LASER_FADE_MS;
+    ctx.strokeStyle = `rgba(255, 45, 45, ${0.9 * k})`;
+    ctx.lineWidth = 2 + 4 * k;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  if (pointer && activeTool() === 'laser') {
+    const g = ctx.createRadialGradient(pointer.x, pointer.y, 0, pointer.x, pointer.y, 11);
+    g.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    g.addColorStop(0.3, 'rgba(255, 50, 50, 1)');
+    g.addColorStop(1, 'rgba(255, 0, 0, 0)');
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(pointer.x, pointer.y, 11, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  if (laserTrail.length) requestRender();
+}
+
+// ---------- Pergel ----------
+// İlk sürükleme merkezi ve yarıçapı belirler. Sonra merkezdeki tutamaçla pergel taşınır, kalem
+// ucundaki tutamaçla yarıçap değişir; başka her yerde sürüklemek, kalem ucunu merkez etrafında
+// döndürerek yay çizer (tam tur çember olur). Dokunmak tam çember çizer. Esc pergeli sıfırlar.
+
+const snapGrid = (p) => ({ x: Math.round(p.x / GRID_UNIT) * GRID_UNIT, y: Math.round(p.y / GRID_UNIT) * GRID_UNIT });
+
+// Shift basılıyken yarıçap yarım karenin katlarına yuvarlanır.
+function snapRadius(w) {
+  const half = GRID_UNIT / 2;
+  const a = Math.atan2(w.y - compass.cy, w.x - compass.cx);
+  const r = Math.max(half, Math.round(Math.hypot(w.x - compass.cx, w.y - compass.cy) / half) * half);
+  return { x: compass.cx + r * Math.cos(a), y: compass.cy + r * Math.sin(a) };
+}
+
+function compassTip() {
+  return { x: compass.cx + compass.r * Math.cos(compass.a), y: compass.cy + compass.r * Math.sin(compass.a) };
+}
+
+function compassHandle(sx, sy) {
+  if (!compass) return null;
+  const c = toScreen(compass.cx, compass.cy);
+  if (Math.hypot(sx - c.x, sy - c.y) <= 12) return 'center';
+  const t = compassTip();
+  const p = toScreen(t.x, t.y);
+  if (Math.hypot(sx - p.x, sy - p.y) <= 12) return 'tip';
+  return null;
+}
+
+function startCompass(e, w) {
+  const h = compassHandle(e.clientX, e.clientY);
+  if (!compass) {
+    const c = e.shiftKey ? snapGrid(w) : w;
+    compass = { cx: c.x, cy: c.y, r: 0, a: 0 };
+    drag = { kind: 'compassSet' };
+  } else if (h === 'center') {
+    drag = { kind: 'compassMove' };
+  } else if (h === 'tip') {
+    drag = { kind: 'compassRadius' };
+  } else {
+    checkpoint();
+    const a = Math.atan2(w.y - compass.cy, w.x - compass.cx);
+    compass.a = a;
+    const st = styles.shape;
+    const el = { id: newId(), type: 'stroke', points: arcPoints(compass.cx, compass.cy, compass.r, a, 0), color: st.color, width: st.width, highlighter: false, pressure: false };
+    board.elements.push(el);
+    drag = { kind: 'compassArc', el, a0: a, last: a, acc: 0, moved: false };
+    autoHideProps();
+    sceneCacheValid = false;
+  }
+}
+
+function updateCompassArc(w) {
+  const a = Math.atan2(w.y - compass.cy, w.x - compass.cx);
+  drag.acc = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, drag.acc + angleDelta(a, drag.last)));
+  drag.last = a;
+  compass.a = a;
+  if (Math.abs(drag.acc) * compass.r * board.view.zoom > 3) drag.moved = true;
+  drag.el.points = arcPoints(compass.cx, compass.cy, compass.r, drag.a0, drag.acc);
+}
+
+function endCompassArc(d) {
+  // Dokunma ya da tam tur: yay yerine düzgün bir çember (elips öğesi) bırakılır.
+  if (!d.moved || Math.abs(d.acc) >= Math.PI * 2 - 0.03) {
+    const { cx, cy, r } = compass;
+    const circle = { id: d.el.id, type: 'ellipse', x: cx - r, y: cy - r, w: r * 2, h: r * 2, color: d.el.color, width: d.el.width, fill: 'none' };
+    board.elements[board.elements.indexOf(d.el)] = circle;
+  }
+  changed();
+}
+
+// Pergelin kolları, merkez ve kalem ucu tutamaçları, yarıçap (kare cinsinden).
+function drawCompass() {
+  const p = pointer && !compass && !drag ? pointer : null;
+  if (!compass) {
+    if (p) {
+      ctx.fillStyle = 'rgba(74,124,240,0.9)';
+      ctx.font = '12px "Segoe UI", sans-serif';
+      ctx.fillText('Merkezden sürükle', p.x + 14, p.y + 18);
+    }
+    return;
+  }
+  const z = board.view.zoom;
+  const c = toScreen(compass.cx, compass.cy);
+  const t = compassTip();
+  const tp = toScreen(t.x, t.y);
+  const rs = compass.r * z;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(74,124,240,0.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, rs, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(74,124,240,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(c.x, c.y);
+  ctx.lineTo(tp.x, tp.y);
+  ctx.stroke();
+  for (const [q, r] of [[c, 6], [tp, 7]]) {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(74,124,240,0.95)';
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, 2, 0, Math.PI * 2);
+  ctx.fill();
+  const label = 'r = ' + (compass.r / GRID_UNIT).toLocaleString('tr-TR', { maximumFractionDigits: 1 }) + ' kare';
+  ctx.font = '600 12px "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  const mx = (c.x + tp.x) / 2;
+  const my = (c.y + tp.y) / 2;
+  const tw = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillRect(mx - tw / 2 - 4, my - 22, tw + 8, 17);
+  ctx.fillStyle = '#2457d6';
+  ctx.fillText(label, mx, my - 6);
+  ctx.restore();
+}
+
 // a'dan b'ye giden yol üzerindeki her şeyi siler (hızlı harekette boşluk kalmasın).
 function eraseAlong(a, b) {
   const r = ERASER_RADIUS / board.view.zoom;
@@ -1092,8 +1856,9 @@ function eraseAlong(a, b) {
     samples.push({ x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps });
   }
   const { mode, all } = styles.eraser;
-  const hits = board.elements.filter((el) =>
-    (all || (el.type !== 'note' && el.type !== 'image')) && samples.some((p) => hitTest(el, p.x, p.y, r)));
+  // Kilitli nesneler silgiden etkilenmez; not, resim, bant ve koordinat sistemi yalnızca "hepsini sil" açıkken silinir.
+  const hits = board.elements.filter((el) => !el.locked &&
+    (all || !['note', 'image', 'cover', 'axes'].includes(el.type)) && samples.some((p) => hitTest(el, p.x, p.y, r)));
   if (!hits.length) return;
   if (!drag.checkpointed) {
     checkpoint();
@@ -1134,10 +1899,12 @@ function updatePinch() {
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   // Cetvelin üzerinde tekerlek cetveli 1° (Shift ile 15°) döndürür.
-  if (ruler && !e.ctrlKey && rulerHit(ruler, e.clientX, e.clientY)) {
+  const turnable = (ruler && rulerHit(ruler, e.clientX, e.clientY) && ruler) ||
+    (protractor && protractorHit(protractor, e.clientX, e.clientY) && protractor);
+  if (turnable && !e.ctrlKey) {
     const dir = Math.sign(e.deltaY || e.deltaX);
     const step = ((e.shiftKey ? 15 : 1) * Math.PI) / 180;
-    ruler.angle = Math.round((ruler.angle - dir * step) / step) * step;
+    turnable.angle = Math.round((turnable.angle - dir * step) / step) * step;
     requestRender();
     return;
   }
@@ -1163,12 +1930,24 @@ function updateCursor(e) {
   let c = 'default';
   if (drag?.kind === 'pan') c = 'grabbing';
   else if (t === 'hand') c = 'grab';
-  else if (t === 'pen' || t === 'highlighter' || t === 'tempHighlighter' || SHAPE_TOOLS.includes(t) || t === 'note') c = 'crosshair';
-  else if (t === 'eraser') c = 'none';
+  else if (t === 'pen' || t === 'highlighter' || t === 'tempHighlighter' || SHAPE_TOOLS.includes(t) || t === 'note' || t === 'cover') c = 'crosshair';
+  else if (t === 'eraser' || t === 'laser') c = 'none';
   else if (t === 'text') c = 'text';
-  if (drag?.kind === 'rulerMove') c = 'grabbing';
+  const ph = protractor && e && !drag && t !== 'hand' ? protractorHit(protractor, e.clientX, e.clientY) : null;
+  if (crop) {
+    const part = drag?.kind === 'crop' ? drag.part : e ? cropHit(e.clientX, e.clientY) : null;
+    canvas.style.cursor = part ? cropCursor(part) : 'default';
+    return;
+  }
+  if (drag?.kind === 'rulerMove' || drag?.kind === 'protMove') c = 'grabbing';
   else if (ruler && e && !drag && t !== 'hand' && rulerHit(ruler, e.clientX, e.clientY)) {
     c = rulerHit(ruler, e.clientX, e.clientY) === 'knob' ? 'grab' : 'move';
+  } else if (ph) {
+    c = ph === 'body' ? 'move' : 'grab';
+  } else if (t === 'compass' && e && compassHandle(e.clientX, e.clientY)) {
+    c = 'move';
+  } else if (t === 'cover' && e && coverAt(toWorld(e.clientX, e.clientY))) {
+    c = 'pointer';
   } else if (t === 'select' && e) {
     const h = hitHandle(e.clientX, e.clientY);
     if (h === 'nw' || h === 'se') c = 'nwse-resize';
@@ -1254,8 +2033,9 @@ function commitEditor() {
     if (isNew) undoStack.pop();
   } else {
     el.text = text;
-    if (el.type === 'text') Object.assign(el, measureText(text, el.fontSize));
-    else fitNoteHeight(el, text);
+    // Formül resmi hâlâ aynı yazıya aitse boyutu korunur; değilse yeni resim gelene kadar düz metin ölçüsü.
+    if (el.type === 'text' && el.math?.text !== text) Object.assign(el, measureText(text, el.fontSize));
+    else if (el.type === 'note') fitNoteHeight(el, text);
     if (!isNew && text === oldText && el.h === oldH) {
       undoStack.pop();
       changed(false);
@@ -1273,6 +2053,7 @@ function styleKey(t) {
 
 // Panelde hangi satırların görüneceğini ve seçili değerleri belirler.
 function propsContext() {
+  if (crop) return { crop: true };
   if (editing) {
     const el = editing.el;
     return el.type === 'note'
@@ -1283,11 +2064,15 @@ function propsContext() {
     const sel = selectedEls();
     const has = (...types) => sel.some((el) => types.includes(el.type));
     const first = (...types) => sel.find((el) => types.includes(el.type)) || {};
-    const ctx = { arrange: true, values: {} };
-    if (has('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text')) {
-      ctx.colors = sel.every((el) => el.highlighter) ? HIGHLIGHT_COLORS : INK_COLORS;
-      ctx.values.color = first('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text').color;
+    const ctx = { arrange: true, values: { locked: sel.every((el) => el.locked) } };
+    if (has('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes')) {
+      ctx.colors = sel.every((el) => el.highlighter) ? HIGHLIGHT_COLORS
+        : sel.every((el) => el.type === 'cover') ? COVER_COLORS : INK_COLORS;
+      ctx.values.color = first('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes').color;
     }
+    ctx.cover = has('cover');
+    ctx.axes = sel.length === 1 && sel[0].type === 'axes' ? sel[0] : null;
+    ctx.cropable = sel.length === 1 && sel[0].type === 'image' && !sel[0].locked;
     if (has('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon')) {
       ctx.widths = sel.every((el) => el.highlighter) ? HIGHLIGHT_WIDTHS
         : sel.every((el) => el.brush === 'tape') ? TAPE_WIDTHS : PEN_WIDTHS;
@@ -1328,8 +2113,9 @@ function propsContext() {
   if (t === 'highlighter') return { colors: HIGHLIGHT_COLORS, widths: HIGHLIGHT_WIDTHS, values: styles.highlighter };
   if (t === 'tempHighlighter') return { colors: HIGHLIGHT_COLORS, widths: HIGHLIGHT_WIDTHS, values: styles.tempHighlighter };
   if (SHAPE_TOOLS.includes(t)) {
-    return { colors: INK_COLORS, widths: SHAPE_WIDTHS, fill: t === 'rect' || t === 'ellipse', values: styles.shape };
+    return { colors: INK_COLORS, widths: SHAPE_WIDTHS, fill: t === 'rect' || t === 'ellipse', compass: t === 'compass', values: styles.shape };
   }
+  if (t === 'cover') return { colors: COVER_COLORS, cover: true, coverTool: true, values: styles.cover };
   if (t === 'text') return { colors: INK_COLORS, font: true, values: styles.text };
   if (t === 'note') return { noteColors: true, font: true, values: { noteColor: styles.note.color, fontSize: styles.note.fontSize } };
   if (t === 'eraser') return { eraser: true };
@@ -1414,7 +2200,25 @@ function updateProps() {
   fillRow.classList.toggle('hidden', !c.fill);
   fillRow.querySelectorAll('[data-fill]').forEach((b) => b.classList.toggle('selected', b.dataset.fill === v.fill));
 
+  $('#coverRow').classList.toggle('hidden', !c.cover);
+  $('[data-cover="toggle"]').classList.toggle('hidden', !!c.coverTool);
+  $('#compassRow').classList.toggle('hidden', !c.compass);
+  const ax = c.axes;
+  $('#axesRow').classList.toggle('hidden', !ax);
+  $('#fnList').classList.toggle('hidden', !ax?.fns?.length);
+  if (ax) {
+    $('[data-axes-grid]').classList.toggle('selected', !!ax.grid);
+    $('#fnList').innerHTML = (ax.fns || []).map((f, i) =>
+      `<button class="chip fnchip" data-fn-remove="${i}" title="Bu grafiği kaldır"><span class="fndot" style="background:${f.color}"></span>${escHtml(functionLabel(f.expr))} <span class="muted">×</span></button>`,
+    ).join('');
+  }
+  const lockChip = $('[data-arrange="lock"]');
+  lockChip.textContent = v.locked ? 'Kilidi aç' : 'Kilitle';
+  lockChip.classList.toggle('selected', !!v.locked);
+  lockChip.classList.toggle('hidden', !studentMode && !v.locked);
   $('#arrangeRow').classList.toggle('hidden', !c.arrange);
+  $('#cropRow').classList.toggle('hidden', !c.crop);
+  $('#imageRow').classList.toggle('hidden', !c.cropable);
   $('#obsidianRow').classList.toggle('hidden', !c.obsidian);
   $('[data-obsidian="open"]').classList.toggle('hidden', !c.obsidianOne);
   $('#shapeRow').classList.toggle('hidden', !c.toShape);
@@ -1479,6 +2283,35 @@ $('#props').addEventListener('click', (e) => {
   else if (b.dataset.fill) applyStyle('fill', b.dataset.fill);
   else if (b.dataset.brush) applyStyle('brush', b.dataset.brush);
   else if (b.dataset.arrange) arrange(b.dataset.arrange);
+  else if (b.dataset.crop === 'start') startCrop();
+  else if (b.dataset.crop === 'apply') applyCrop();
+  else if (b.dataset.crop === 'cancel') cancelCrop();
+  else if (b.dataset.crop === 'reset' && cropEl()) {
+    const el = cropEl();
+    crop.r = { x: el.x, y: el.y, w: el.w, h: el.h };
+    requestRender();
+  }
+  else if (b.dataset.cover === 'toggle') {
+    const covers = selectedEls().filter((el) => el.type === 'cover');
+    const show = covers.some((el) => !revealedCovers.has(el.id));
+    for (const el of covers) toggleCover(el, show);
+  } else if (b.dataset.cover) setAllCovers(b.dataset.cover === 'showAll');
+  else if (b.dataset.compass === 'reset') {
+    compass = null;
+    requestRender();
+  } else if ('axesGrid' in b.dataset) {
+    const ax = selectedEls()[0];
+    checkpoint();
+    ax.grid = !ax.grid;
+    changed();
+  } else if ('axesAdd' in b.dataset) addFunction();
+  else if (b.dataset.fnRemove) {
+    const ax = selectedEls()[0];
+    const i = Number(b.dataset.fnRemove);
+    checkpoint();
+    ax.fns = ax.fns.filter((_, k) => k !== i); // dizi yerinde değiştirilmez (geri alma kopyası paylaşıyor)
+    changed();
+  }
   else if ('propsToggle' in b.dataset) setPropsCollapsed(!propsUi.collapsed);
   else if ('propsPin' in b.dataset) {
     propsUi.pinned = !propsUi.pinned;
@@ -1508,6 +2341,39 @@ $('#props').addEventListener('change', (e) => {
   if (e.target.type === 'color') applyStyle('color', e.target.value);
 });
 
+// Koordinat sistemine fonksiyon grafiği ekler (paneldeki kutudan).
+function addFunction() {
+  const input = $('#fnInput');
+  const ax = selectedEls()[0];
+  if (!ax || ax.type !== 'axes') return;
+  const expr = input.value.trim();
+  const r = compileFunction(expr);
+  if (r.error) {
+    input.classList.add('invalid');
+    return toast('Fonksiyon anlaşılamadı: ' + r.error);
+  }
+  input.classList.remove('invalid');
+  const fns = ax.fns || [];
+  const color = FN_COLORS.find((c) => !fns.some((f) => f.color === c)) || FN_COLORS[fns.length % FN_COLORS.length];
+  checkpoint();
+  ax.fns = [...fns, { expr, color }];
+  input.value = '';
+  changed();
+}
+
+$('#fnInput').addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addFunction();
+  } else if (e.key === 'Escape') e.target.blur();
+});
+$('#fnInput').addEventListener('input', (e) => e.target.classList.remove('invalid'));
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
 // Paneldeki düğmeler düzenleyiciden odağı çalmasın.
 $('#props').addEventListener('mousedown', (e) => {
   if (editing && e.target.type !== 'color') e.preventDefault();
@@ -1530,10 +2396,37 @@ function arrange(action) {
   if (!sel.length) return;
   if (action === 'delete') return deleteSelection();
   if (action === 'duplicate') return duplicateSelection();
+  if (action === 'lock') return toggleLock();
   checkpoint();
   const rest = board.elements.filter((el) => !selection.has(el.id));
   board.elements = action === 'front' ? [...rest, ...sel] : [...sel, ...rest];
   changed();
+}
+
+// Seçili nesneleri kilitler; hepsi zaten kilitliyse kilitlerini açar.
+function toggleLock() {
+  const sel = selectedEls();
+  if (!sel.length) return;
+  const lock = !sel.every((el) => el.locked);
+  checkpoint();
+  for (const el of sel) {
+    if (lock) el.locked = true;
+    else delete el.locked;
+  }
+  if (lock) selection.clear();
+  changed();
+  toast(lock
+    ? (sel.length > 1 ? `${sel.length} nesne kilitlendi` : 'Kilitlendi') + ' — seçmek için çift tıkla'
+    : 'Kilit açıldı');
+}
+
+function unlockAll() {
+  const locked = board.elements.filter((el) => el.locked);
+  if (!locked.length) return toast('Tahtada kilitli nesne yok');
+  checkpoint();
+  for (const el of locked) delete el.locked;
+  changed();
+  toast(`${locked.length} nesnenin kilidi açıldı`);
 }
 
 function deleteSelection() {
@@ -1569,6 +2462,7 @@ function duplicateSelection() {
 
 function setTool(t) {
   commitEditor();
+  cancelCrop();
   tool = t;
   if (t !== 'select') selection.clear();
   pickInGroup(t);
@@ -1711,6 +2605,7 @@ $('#filebar').addEventListener('click', (e) => {
 });
 
 function runAction(a) {
+  if (STUDENT_TARGETS.includes(a) && !studentOnly()) return;
   pickInGroup(a);
   switch (a) {
     case 'undo': return undo();
@@ -1727,7 +2622,30 @@ function runAction(a) {
       ruler = ruler ? null : createRuler(innerWidth / 2, innerHeight / 2);
       $('[data-action="ruler"]').classList.toggle('active', !!ruler);
       return requestRender();
+    case 'protractor':
+      protractor = protractor ? null : createProtractor(innerWidth / 2, innerHeight / 2 + PROT_R / 2);
+      $('[data-action="protractor"]').classList.toggle('active', !!protractor);
+      return requestRender();
+    case 'axes': return insertAxes();
   }
+}
+
+// Ekranın ortasına, başlangıç noktası kareli arka planın bir köşesine oturan koordinat sistemi ekler.
+function insertAxes() {
+  commitEditor();
+  const U = GRID_UNIT;
+  const o = snapGrid(toWorld(innerWidth / 2, innerHeight / 2));
+  const el = {
+    id: newId(), type: 'axes', x: o.x - 7 * U, y: o.y - 5 * U, w: 14 * U, h: 10 * U,
+    ox: o.x, oy: o.y, unit: U, color: '#1f2328', grid: false, fns: [],
+  };
+  checkpoint();
+  board.elements.push(el);
+  setTool('select');
+  selection = new Set([el.id]);
+  changed();
+  toast('Koordinat sistemi eklendi — panelden fonksiyon grafiği çizebilirsin');
+  setTimeout(() => $('#fnInput').focus());
 }
 
 // ---------- Menü ----------
@@ -1748,6 +2666,8 @@ $('#menu').addEventListener('click', (e) => {
     handleCommand(b.dataset.cmd);
   } else if ('autosave' in b.dataset) {
     setAutoSave(!autoSave);
+  } else if ('student' in b.dataset) {
+    setStudentMode(!studentMode);
   } else if (b.dataset.bg) {
     board.background = b.dataset.bg;
     updateBgUI();
@@ -1799,6 +2719,7 @@ function updateBgUI() {
 
 async function handleCommand(cmd) {
   commitEditor();
+  if ((STUDENT_COMMANDS.includes(cmd) || STUDENT_TARGETS.includes(cmd)) && !studentOnly()) return;
   switch (cmd) {
     case 'new':
       if (!(await leaveBoard())) return;
@@ -1833,6 +2754,16 @@ async function handleCommand(cmd) {
     }
     case 'exportPng':
       return exportPng();
+    case 'exportPdf':
+      return exportPages('pdf');
+    case 'print':
+      return exportPages('print');
+    case 'unlockAll':
+      return unlockAll();
+    case 'coversHide':
+      return setAllCovers(false);
+    case 'coversShow':
+      return setAllCovers(true);
     case 'showFolder':
       if (autoSave) await saveNow();
       return api.showFolder();
@@ -1894,15 +2825,18 @@ const helpOpen = () => !help.classList.contains('hidden');
 
 // Araç hedeflerinin rehberdeki adları (SHORTCUTS tablosunun tek eksiği bu etiketler).
 const TOOL_LABELS = {
-  select: 'Seç', pen: 'Kalem', highlighter: 'Fosforlu kalem', tempHighlighter: 'Geçici fosforlu kalem',
-  eraser: 'Silgi', ruler: 'Cetveli aç / kapat', rect: 'Dikdörtgen', ellipse: 'Elips', line: 'Çizgi',
-  arrow: 'Ok', text: 'Metin', note: 'Yapışkan not', image: 'Resim veya PDF ekle', obsidian: "Obsidian'dan ekle",
+  select: 'Seç', pen: 'Kalem', highlighter: 'Fosforlu kalem', tempHighlighter: 'Geçici fosforlu kalem', laser: 'Lazer işaretçi',
+  eraser: 'Silgi', ruler: 'Cetveli aç / kapat', protractor: 'Açıölçeri aç / kapat', rect: 'Dikdörtgen',
+  ellipse: 'Elips', line: 'Çizgi', arrow: 'Ok', compass: 'Pergel', text: 'Metin', note: 'Yapışkan not',
+  cover: 'Gizleme bandı', image: 'Resim veya PDF ekle', obsidian: "Obsidian'dan ekle", axes: 'Koordinat sistemi ekle',
 };
 // Menü hızlandırıcıları ve fare/klavye kombinasyonları (araç kısayolları dışındakiler).
 const GENERAL_KEYS = [
   [['Ctrl+Z'], 'Geri al'], [['Ctrl+Y', 'Ctrl+Shift+Z'], 'Yinele'],
   [['Ctrl+C', 'Ctrl+X', 'Ctrl+V'], 'Kopyala / kes / yapıştır'], [['Ctrl+D'], 'Seçileni çoğalt'],
-  [['Ctrl+A'], 'Tümünü seç'], [['Delete', 'Backspace'], 'Seçileni sil'],
+  [['Ctrl+F'], 'Tahtada ara (Enter: sonraki, Shift+Enter: önceki)'],
+  [['Ctrl+A'], 'Tümünü seç (kilitliler hariç)'], [['Delete', 'Backspace'], 'Seçileni sil'],
+  [['Ctrl+L'], 'Seçileni kilitle / kilidini aç'], [['Çift tık'], 'Kilitli nesneyi seç; bandı aç / kapat'],
   [['Ok tuşları'], 'Seçileni 1 piksel kaydır (Shift ile 10)'], [['['], 'Arkaya gönder'], [[']'], 'Öne getir'],
   [['Esc'], 'Seçimi bırak, açık pencereyi kapat'], [['Shift', 'tıklama'], 'Seçime ekle / çıkar'],
   [['Boşluk', 'sürükle'], 'Tahtayı kaydır'], [['Ctrl', 'tekerlek'], 'Yakınlaştır / uzaklaştır'],
@@ -1911,8 +2845,11 @@ const GENERAL_KEYS = [
   [['Shift', 'Ctrl'], 'Kalemle çizerken basılı tut: dümdüz çizgi'],
   [['Shift'], 'Şekil çizerken: kare / daire, 15° adım'],
   [['Esc', 'Ctrl+Enter'], 'Metin / not yazmayı bitir'],
+  [['Enter', 'Esc'], 'Resim kırparken: uygula / vazgeç'],
   [['Ctrl+G'], 'Tahtalarım'], [['Ctrl+N'], 'Yeni tahta'], [['Ctrl+O'], 'Aç'], [['Ctrl+S'], 'Kaydet'],
   [['Ctrl+Shift+S'], 'Farklı kaydet'], [['Ctrl+E'], 'PNG olarak dışa aktar'],
+  [['Ctrl+Shift+E'], 'PDF olarak dışa aktar'], [['Ctrl+P'], 'Yazdır'],
+  [['Shift'], 'Pergelde: merkezi kare köşesine, yarıçapı yarım karelere oturt'],
   [['F2'], 'Galeride seçili tahtayı yeniden adlandır'], [['F1'], 'Bu rehber'], [['F12'], 'Geliştirici araçları'],
 ];
 
@@ -1922,7 +2859,7 @@ const kbd = (k) => `<kbd>${k}</kbd>`;
 let capturing = null;
 
 function buildHelpKeys() {
-  $('#helpToolKeys').innerHTML = SHORTCUTS.map((s) => {
+  $('#helpToolKeys').innerHTML = SHORTCUTS.filter((s) => studentMode || !STUDENT_TARGETS.includes(s.target)).map((s) => {
     const keys = SLOTS.filter((slot) => s[slot]).map((slot) => {
       const on = capturing && capturing.target === s.target && capturing.slot === slot;
       return `<button class="keychip${on ? ' capturing' : ''}" data-target="${s.target}" data-slot="${slot}" ` +
@@ -2071,7 +3008,7 @@ function obsidianPickerOpen() {
 
 // Galeri, Obsidian seçicisi ya da PDF sayfa penceresi açıkken pano ve sürükle-bırak tahtaya işlemez.
 function overlayOpen() {
-  return galleryOpen() || obsidianPickerOpen() || pdfDialogOpen();
+  return galleryOpen() || obsidianPickerOpen() || pdfDialogOpen() || exportDialogOpen();
 }
 
 async function openGallery() {
@@ -2320,6 +3257,169 @@ async function exportPng() {
   if (p) toast('Resim kaydedildi');
 }
 
+// ---------- PDF olarak dışa aktarma ve yazdırma ----------
+// Tahta A4 sayfalara bölünüp her sayfa resim olarak çizilir; ana süreç bunları gizli bir
+// pencerede PDF'e çevirir (printToPDF) ya da yazdırma penceresini açar.
+
+const PAGE_A4 = { w: 794, h: 1123 }; // CSS pikseli (96 dpi)
+const PAGE_MARGIN = 36;
+const PAGE_RES = 2; // sayfa resimleri ~190 dpi
+const MAX_PAGE_SCALE = 2; // küçük çizimler sayfaya sığdırılırken en fazla bu kadar büyütülür
+
+function pageGeometry(els, opts) {
+  const land = opts.orient === 'landscape';
+  const pw = land ? PAGE_A4.h : PAGE_A4.w;
+  const ph = land ? PAGE_A4.w : PAGE_A4.h;
+  const aw = pw - PAGE_MARGIN * 2;
+  const ah = ph - PAGE_MARGIN * 2;
+  const b = unionBBox(els);
+  if (opts.fit === 'page') {
+    const s = Math.min(aw / b.w, ah / b.h, MAX_PAGE_SCALE);
+    return { pw, ph, aw, ah, b, s, slices: [[b.y, b.y + b.h]] };
+  }
+  const s = Math.min(aw / b.w, MAX_PAGE_SCALE);
+  return { pw, ph, aw, ah, b, s, slices: pageSlices(els, b, ah / s) };
+}
+
+// Sayfa sınırlarını mümkünse hiçbir nesneyi kesmeyen bir yükseklikte seçer (ör. PDF sayfaları
+// arasındaki boşluk); sayfanın son %65'inde böyle bir yer yoksa tam sayfa boyunda keser.
+function pageSlices(els, b, sliceH) {
+  const boxes = els.map(bbox);
+  const crosses = (y) => boxes.some((r) => r.y < y - 0.01 && r.y + r.h > y + 0.01);
+  const out = [];
+  const end = b.y + b.h;
+  let y = b.y;
+  while (y < end - 0.5 && out.length < 500) {
+    let cut = Math.min(end, y + sliceH);
+    if (cut < end && crosses(cut)) {
+      const lo = y + sliceH * 0.35;
+      const candidates = boxes.flatMap((r) => [r.y, r.y + r.h]).filter((c) => c >= lo && c < cut).sort((p, q) => q - p);
+      const free = candidates.find((c) => !crosses(c));
+      if (free !== undefined) {
+        // Boşluğun ortasından kesilir; komşu nesnenin kenarı sayfanın dibine taşmasın.
+        const above = Math.max(lo, ...boxes.map((r) => r.y + r.h).filter((v) => v <= free + 0.01));
+        const below = Math.min(cut, ...boxes.map((r) => r.y).filter((v) => v >= free - 0.01));
+        cut = (above + below) / 2;
+      }
+    }
+    out.push([y, cut]);
+    y = cut;
+  }
+  return out;
+}
+
+function renderPages(els, opts) {
+  const g = pageGeometry(els, opts);
+  const { pw, ph, aw, ah, b, s } = g;
+  return g.slices.map(([y0, y1]) => {
+    const c = document.createElement('canvas');
+    c.width = Math.round(pw * PAGE_RES);
+    c.height = Math.round(ph * PAGE_RES);
+    const cx = c.getContext('2d');
+    const contentH = (y1 - y0) * s;
+    const ox = PAGE_MARGIN + (aw - b.w * s) / 2;
+    const oy = PAGE_MARGIN + (opts.fit === 'page' ? (ah - contentH) / 2 : 0);
+    const view = { x: (ox - b.x * s) * PAGE_RES, y: (oy - y0 * s) * PAGE_RES, zoom: s * PAGE_RES };
+    if (opts.bg) drawBackground(cx, view, c.width, c.height, board.background, board.bgColor);
+    else {
+      cx.fillStyle = '#ffffff';
+      cx.fillRect(0, 0, c.width, c.height);
+    }
+    // Sayfaya düşen dilimin dışı kesilir; kenar boşlukları temiz kalır.
+    cx.beginPath();
+    cx.rect(PAGE_MARGIN * PAGE_RES, oy * PAGE_RES, aw * PAGE_RES, Math.ceil(contentH * PAGE_RES));
+    cx.clip();
+    cx.setTransform(view.zoom, 0, 0, view.zoom, view.x, view.y);
+    const slice = { x: b.x, y: y0, w: b.w, h: y1 - y0 };
+    for (const el of els) if (rectsIntersect(bbox(el), slice)) drawElement(cx, el);
+    return c.toDataURL('image/jpeg', 0.9);
+  });
+}
+
+const exportDlg = $('#exportDlg');
+const exportDialogOpen = () => !exportDlg.classList.contains('hidden');
+// Form hiçbir zaman gerçekten gönderilmez (gönderilirse sayfa yeniden yüklenirdi).
+$('#exportForm').addEventListener('submit', (e) => e.preventDefault());
+
+// Seçenek penceresini gösterir; onaylanırsa { scope, orient, fit, bg } döner, vazgeçilirse null.
+function askExportOptions(mode) {
+  const form = $('#exportForm');
+  const hasSel = selection.size > 0;
+  $('#exportTitle').textContent = mode === 'print' ? 'Yazdır' : 'PDF olarak dışa aktar';
+  $('#exportOk').firstChild.textContent = mode === 'print' ? 'Yazdır… ' : 'Kaydet… ';
+  $('#exScopeSel').classList.toggle('hidden', !hasSel);
+  form.exScope.value = hasSel ? 'selection' : 'all';
+  form.exOrient.value = exportOpts.orient;
+  form.exFit.value = exportOpts.fit;
+  $('#exBg').checked = exportOpts.bg;
+  const read = () => ({ scope: form.exScope.value, orient: form.exOrient.value, fit: form.exFit.value, bg: $('#exBg').checked });
+  const update = () => {
+    const o = read();
+    const els = o.scope === 'selection' ? selectedEls() : board.elements;
+    const n = pageGeometry(els, o).slices.length;
+    $('#exSummary').textContent = `${n} sayfa`;
+  };
+
+  return new Promise((resolve) => {
+    const finish = (res) => {
+      exportDlg.classList.add('hidden');
+      form.removeEventListener('change', update);
+      form.removeEventListener('submit', onSubmit);
+      exportDlg.removeEventListener('keydown', onKey);
+      exportDlg.removeEventListener('pointerdown', onBackdrop);
+      $('#exCancel').removeEventListener('click', onCancel);
+      resolve(res);
+    };
+    const onSubmit = (e) => {
+      e.preventDefault();
+      const o = read();
+      exportOpts = { orient: o.orient, fit: o.fit, bg: o.bg };
+      savePrefs();
+      finish(o);
+    };
+    const onKey = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(null);
+      }
+    };
+    const onBackdrop = (e) => { if (e.target === exportDlg) finish(null); };
+    const onCancel = () => finish(null);
+    form.addEventListener('change', update);
+    form.addEventListener('submit', onSubmit);
+    exportDlg.addEventListener('keydown', onKey);
+    exportDlg.addEventListener('pointerdown', onBackdrop);
+    $('#exCancel').addEventListener('click', onCancel);
+    exportDlg.classList.remove('hidden');
+    update();
+    $('#exportOk').focus();
+  });
+}
+
+async function exportPages(mode) {
+  if (!board.elements.length) return toast('Dışa aktarılacak bir şey yok');
+  hideMenu();
+  const o = await askExportOptions(mode);
+  if (!o) return;
+  const els = o.scope === 'selection' ? selectedEls() : board.elements;
+  toast('Sayfalar hazırlanıyor…');
+  // Toast'un görünmesi için çizime bir kare izin verilir.
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r)));
+  const pages = renderPages(els, o);
+  const landscape = o.orient === 'landscape';
+  if (mode === 'print') {
+    const res = await api.printPages(pages, landscape);
+    if (res?.error) toast('Yazdırılamadı: ' + res.error);
+    else if (res) toast('Yazıcıya gönderildi');
+    else toast('Yazdırma iptal edildi');
+  } else {
+    const res = await api.exportPdf(pages, landscape);
+    if (res?.error) toast('PDF oluşturulamadı: ' + res.error);
+    else if (res) toast(`PDF kaydedildi (${pages.length} sayfa)`);
+  }
+}
+
 // ---------- Resimler ----------
 
 function readAsDataURL(file) {
@@ -2402,6 +3502,7 @@ function askPdfPages(name, count) {
   take.value = Math.min(5, count);
   range.value = '';
   form.pdfMode.value = 'all';
+  $('#pdfLock').checked = pdfLock;
 
   const pick = () => {
     const mode = form.pdfMode.value;
@@ -2449,7 +3550,10 @@ function askPdfPages(name, count) {
     const onSubmit = (e) => {
       e.preventDefault();
       const r = update();
-      if (!r.error) finish(r.pages);
+      if (r.error) return;
+      if (studentMode) pdfLock = $('#pdfLock').checked;
+      savePrefs();
+      finish(r.pages);
     };
     const onKey = (e) => {
       e.stopPropagation();
@@ -2521,13 +3625,21 @@ async function insertPdf(file, at) {
     const h = (innerHeight * 0.8) / z;
     const w = (h * base.width) / base.height;
     if (y === null) y = center.y - h / 2;
-    created.push({ id: newId(), type: 'image', src: c.toDataURL('image/jpeg', 0.9), x: center.x - w / 2, y, w, h });
+    created.push({
+      id: newId(), type: 'image', src: c.toDataURL('image/jpeg', 0.9), x: center.x - w / 2, y, w, h,
+      ...(studentMode && pdfLock ? { locked: true } : {}),
+    });
     y += h + 24 / z;
     page.cleanup();
   }
   doc.destroy();
   checkpoint();
   board.elements.push(...created);
+  // Kilitli sayfalar seçilmez: üzerine hemen yazılabilir, Seç aracıyla kement de kaydırmaz.
+  if (studentMode && pdfLock) {
+    changed();
+    return toast(`${count} sayfa eklendi ve kilitlendi — taşımak için çift tıklayıp kilidini aç (Ctrl+L)`);
+  }
   setTool('select');
   selection = new Set(created.map((el) => el.id));
   changed();
@@ -2636,7 +3748,7 @@ document.addEventListener('drop', (e) => {
 // ---------- Pano (kopyala / yapıştır) ----------
 
 document.addEventListener('copy', (e) => {
-  if (editing || !selection.size || overlayOpen()) return;
+  if (editing || isTyping(e) || !selection.size || overlayOpen()) return;
   const sel = selectedEls();
   e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel));
   e.clipboardData.setData('text/plain', sel.filter((el) => el.text).map((el) => el.text).join('\n\n'));
@@ -2644,7 +3756,7 @@ document.addEventListener('copy', (e) => {
 });
 
 document.addEventListener('cut', (e) => {
-  if (editing || !selection.size || overlayOpen()) return;
+  if (editing || isTyping(e) || !selection.size || overlayOpen()) return;
   const sel = selectedEls();
   e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel));
   e.preventDefault();
@@ -2652,7 +3764,7 @@ document.addEventListener('cut', (e) => {
 });
 
 document.addEventListener('paste', (e) => {
-  if (editing || e.target === editor || overlayOpen()) return;
+  if (editing || isTyping(e) || overlayOpen()) return;
   const dt = e.clipboardData;
   e.preventDefault();
   const at = pointer ? toWorld(pointer.x, pointer.y) : toWorld(innerWidth / 2, innerHeight / 2);
@@ -2686,8 +3798,15 @@ document.addEventListener('paste', (e) => {
 
 let nudgeTime = 0;
 
+function isTyping(e) {
+  const t = e.target;
+  return t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+}
+
 window.addEventListener('keydown', (e) => {
-  if (e.target === editor || obsidianPickerOpen() || pdfDialogOpen()) return;
+  if (e.target === editor || obsidianPickerOpen() || pdfDialogOpen() || exportDialogOpen()) return;
+  // Paneldeki yazı kutusuna (ör. fonksiyon) yazılan harfler araç seçmesin, Delete nesne silmesin.
+  if (isTyping(e) && !galleryOpen() && !helpOpen()) return;
   if (galleryOpen()) return galleryKeydown(e);
   // Rehber açıkken tuşlar tahtayı etkilemesin (arama kutusuna yazılan harf araç seçmesin).
   if (helpOpen()) {
@@ -2704,6 +3823,16 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Kırpma sürerken yalnızca Enter (uygula) ve Esc (vazgeç) çalışır; Delete resmi silmesin.
+  if (crop) {
+    if (e.key === 'Enter') applyCrop();
+    else if (e.key === 'Escape') cancelCrop();
+    if (!['Shift', 'Control', 'Alt'].includes(e.key) && !((e.ctrlKey || e.metaKey) && ['z', 'y'].includes(e.key.toLowerCase()))) {
+      e.preventDefault();
+      return;
+    }
+  }
+
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
 
@@ -2715,15 +3844,17 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (mod) {
-    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    if (k === 'f') { e.preventDefault(); openSearch(); }
+    else if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
     else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
     else if (k === 'a') {
       e.preventDefault();
       setTool('select');
-      selection = new Set(board.elements.map((el) => el.id));
+      selection = new Set(board.elements.filter((el) => !el.locked).map((el) => el.id));
       updateProps();
       requestRender();
     } else if (k === 'd') { e.preventDefault(); duplicateSelection(); }
+    else if (k === 'l') { e.preventDefault(); if (studentMode || selectedEls().some((el) => el.locked)) toggleLock(); }
     else if ((k === 'c' || k === 'x') && selection.size) {
       // Seçili metin olmasa da "copy" olayının tetiklenmesini garanti eder.
       e.preventDefault();
@@ -2737,21 +3868,22 @@ window.addEventListener('keydown', (e) => {
     deleteSelection();
   } else if (e.key === 'Escape') {
     selection.clear();
+    if (activeTool() === 'compass') compass = null;
     closeFlyout();
     hideMenu();
     updateProps();
     requestRender();
-  } else if (e.key.startsWith('Arrow') && selection.size) {
+  } else if (e.key.startsWith('Arrow') && selectedEls().some((el) => !el.locked)) {
     e.preventDefault();
     const step = (e.shiftKey ? 10 : 1) / board.view.zoom;
     const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
     if (Date.now() - nudgeTime > 600) checkpoint();
     nudgeTime = Date.now();
-    for (const el of selectedEls()) translate(el, d[0], d[1]);
+    for (const el of selectedEls()) if (!el.locked) translate(el, d[0], d[1]);
     changed();
   } else if (e.key === ']') arrange('front');
   else if (e.key === '[') arrange('back');
-  else if (!e.altKey && KEYMAP.has(k)) {
+  else if (!e.altKey && KEYMAP.has(k) && (studentMode || !STUDENT_TARGETS.includes(KEYMAP.get(k)))) {
     const target = KEYMAP.get(k);
     // Eylemin açtığı pencere (ör. Obsidian seçicisinin arama kutusu) tuşun harfini almasın.
     e.preventDefault();
@@ -2785,6 +3917,7 @@ async function init() {
   setTool(tool);
   updateBgUI();
   updateAutoSaveUI();
+  applyStudentMode();
   const res = await api.loadInitial();
   if (res.data) loadBoard(res.data);
   else {

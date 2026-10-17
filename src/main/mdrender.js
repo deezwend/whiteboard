@@ -1,7 +1,7 @@
 // Obsidian notundan alınan bölümü HTML'e çevirir ve gizli (offscreen) bir pencerede resme dönüştürür.
 // Resim tahtaya normal "image" öğesi olarak eklenir; böylece yakınlaştırma, dışa aktarma ve
 // geri al/yinele hiçbir değişiklik gerekmeden çalışır.
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -483,7 +483,8 @@ function waitPaint(wc, w, h) {
   });
 }
 
-async function rasterize(html) {
+// HTML'i #c öğesinin boyutunda resme çevirir: { img (NativeImage), w, h } (w, h CSS pikseli).
+async function rasterizeImage(html, maxScale = SCALE) {
   const dir = path.join(app.getPath('temp'), 'beyaz-tahta-render');
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `bolum-${process.pid}.html`);
@@ -495,7 +496,7 @@ async function rasterize(html) {
   wc.setZoomFactor(1);
   const [w, h] = await wc.executeJavaScript(MEASURE_JS);
   // Çok uzun bölümlerde çözünürlük düşürülür; yine sığmazsa resim alttan kesilir.
-  const scale = Math.max(1, Math.min(SCALE, MAX_PIXEL_H / h));
+  const scale = Math.max(1, Math.min(maxScale, MAX_PIXEL_H / h));
   const pw = Math.ceil(w * scale);
   const ph = Math.min(Math.ceil(h * scale), MAX_PIXEL_H);
   wc.setZoomFactor(scale);
@@ -503,7 +504,12 @@ async function rasterize(html) {
   await waitPaint(wc, pw, ph);
   const img = await wc.capturePage({ x: 0, y: 0, width: pw, height: ph });
   try { fs.unlinkSync(file); } catch { /* yoksay */ }
-  return { src: img.toDataURL(), w, h: Math.round(ph / scale) };
+  return { img, w, h: Math.round(ph / scale) };
+}
+
+async function rasterize(html) {
+  const { img, w, h } = await rasterizeImage(html);
+  return { src: img.toDataURL(), w, h };
 }
 
 // Vault dosya listesi bağlantı çözümlemede sık kullanılır; kısa süre önbellekte tutulur.
@@ -559,6 +565,73 @@ function renderSection({ vault, rel, section, width }) {
   return job;
 }
 
+// ---------- Tahtadaki metin formülleri ----------
+// Formül beyaz zemine siyah çizilir, sonra parlaklık saydamlığa çevrilip istenen renge boyanır;
+// böylece resim her arka planda (koyu tahta, not kâğıdı) doğru görünür.
+
+const MATH_SCALE = 3; // yakınlaştırınca da keskin kalsın
+const MATH_RE = /\$\$([^$]+?)\$\$|\$([^\s$](?:[^$]*?[^\s$])?)\$(?!\d)/g;
+
+const MATH_CSS = `
+html, body { margin: 0; background: #ffffff; overflow: hidden; }
+#c { display: inline-block; vertical-align: top; padding: 0.12em 2px 0.2em; color: #000000;
+  font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.25; white-space: pre; }
+.katex { font-size: 1.12em; }
+.katex-display { display: inline-block; margin: 0; }
+`;
+
+function mathLine(line) {
+  let out = '';
+  let last = 0;
+  for (const m of line.matchAll(MATH_RE)) {
+    out += esc(line.slice(last, m.index));
+    out += m[1] !== undefined ? tex(m[1], true) : tex(m[2], false);
+    last = m.index + m[0].length;
+  }
+  return out + esc(line.slice(last));
+}
+
+function hexRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// Siyah-beyaz görüntüyü renkli, saydam zeminli görüntüye çevirir (BGRA, önçarpımlı).
+function inkToAlpha(img, color) {
+  const { width, height } = img.getSize();
+  const buf = img.toBitmap();
+  const [r, g, b] = hexRgb(color);
+  for (let i = 0; i < buf.length; i += 4) {
+    const a = 255 - Math.round((buf[i] + buf[i + 1] + buf[i + 2]) / 3);
+    buf[i] = Math.round((b * a) / 255);
+    buf[i + 1] = Math.round((g * a) / 255);
+    buf[i + 2] = Math.round((r * a) / 255);
+    buf[i + 3] = a;
+  }
+  return nativeImage.createFromBitmap(buf, { width, height });
+}
+
+function renderMath({ text, fontSize, color }) {
+  const body = String(text).split('\n').map(mathLine).join('\n');
+  const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${PAGE_CSP}">
+<link rel="stylesheet" href="${esc(KATEX_CSS)}"><style>${MATH_CSS}</style></head>
+<body><span id="c" style="font-size: ${fontSize}px">${body}</span></body></html>`;
+  const job = queue.then(async () => {
+    clearTimeout(idleTimer);
+    try {
+      const { img, w, h } = await rasterizeImage(html, MATH_SCALE);
+      return { src: inkToAlpha(img, color).toDataURL(), w, h };
+    } catch (err) {
+      return { error: 'Formül çizilemedi: ' + err.message };
+    } finally {
+      scheduleClose();
+    }
+  });
+  queue = job.catch(() => {});
+  return job;
+}
+
 // Ana pencere kapanınca gizli pencere de kapanmalı; yoksa uygulama kapanmaz.
 function disposeRenderer() {
   clearTimeout(idleTimer);
@@ -566,4 +639,4 @@ function disposeRenderer() {
   renderWin = null;
 }
 
-module.exports = { renderSection, disposeRenderer };
+module.exports = { renderSection, renderMath, disposeRenderer };

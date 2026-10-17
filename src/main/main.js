@@ -561,6 +561,93 @@ ipcMain.handle('obsidian:open', (_e, opts) => {
   return true;
 });
 
+// Metin öğesindeki $…$ formüllerini şeffaf resme çevirir.
+ipcMain.handle('math:render', (_e, opts) => {
+  const text = typeof opts?.text === 'string' ? opts.text.slice(0, 5000) : '';
+  const fontSize = Math.min(400, Math.max(4, Number(opts?.fontSize) || 24));
+  const color = /^#[0-9a-f]{6}$/i.test(opts?.color) ? opts.color : '#1f2328';
+  if (!text) return { error: 'Boş metin.' };
+  return mdrender.renderMath({ text, fontSize, color });
+});
+
+// ---------- PDF ve yazdırma ----------
+// Renderer tahtayı A4 sayfa resimlerine böler; burada resimler geçici bir HTML sayfasına konur ve
+// gizli bir pencerede PDF'e çevrilir ya da yazdırılır.
+
+function validPages(pages) {
+  return Array.isArray(pages) && pages.length > 0 && pages.length <= 500 &&
+    pages.every((p) => typeof p === 'string' && p.startsWith('data:image/jpeg;base64,'));
+}
+
+async function withPagesWindow(pages, landscape, run) {
+  const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'beyaz-tahta-sayfa-'));
+  let pw = null;
+  try {
+    const files = pages.map((p, i) => {
+      const name = `sayfa-${i + 1}.jpg`;
+      fs.writeFileSync(path.join(dir, name), Buffer.from(p.slice(p.indexOf(',') + 1), 'base64'));
+      return name;
+    });
+    const [w, h] = landscape ? ['297mm', '210mm'] : ['210mm', '297mm'];
+    // Sayfa yüksekliği bir tık kısa tutulur; tam A4 boyu yuvarlamayla araya boş sayfa sokabilir.
+    const html = `<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src file:; style-src 'unsafe-inline'">
+<style>@page { size: ${w} ${h}; margin: 0 } html, body { margin: 0 }
+.p { width: ${w}; height: calc(${h} - 0.5mm); overflow: hidden; break-after: page }
+.p:last-child { break-after: auto } img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top }</style>
+</head><body>${files.map((f) => `<div class="p"><img src="${f}"></div>`).join('')}</body></html>`;
+    const file = path.join(dir, 'sayfalar.html');
+    fs.writeFileSync(file, html);
+    pw = new BrowserWindow({
+      show: false,
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'beyaz-tahta-print' },
+    });
+    pw.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    await pw.loadFile(file);
+    return await run(pw.webContents);
+  } finally {
+    if (pw && !pw.isDestroyed()) pw.destroy();
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* yoksay */ }
+  }
+}
+
+ipcMain.handle('export:pdf', async (_e, pages, landscape) => {
+  if (!validPages(pages)) return { error: 'Geçersiz sayfa verisi.' };
+  const base = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : 'Tahta';
+  const res = await dialog.showSaveDialog(win, {
+    title: 'PDF olarak dışa aktar',
+    defaultPath: path.join(app.getPath('documents'), base + '.pdf'),
+    filters: [{ name: 'PDF belgesi', extensions: ['pdf'] }],
+  });
+  if (res.canceled || !res.filePath) return null;
+  try {
+    const pdf = await withPagesWindow(pages, !!landscape, (wc) => wc.printToPDF({
+      landscape: !!landscape,
+      printBackground: true,
+      preferCSSPageSize: true,
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    }));
+    fs.writeFileSync(res.filePath, pdf);
+    return res.filePath;
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('export:print', async (_e, pages, landscape) => {
+  if (!validPages(pages)) return { error: 'Geçersiz sayfa verisi.' };
+  try {
+    return await withPagesWindow(pages, !!landscape, (wc) => new Promise((resolve) => {
+      wc.print({ silent: false, printBackground: true, landscape: !!landscape, margins: { marginType: 'none' } }, (ok, reason) => {
+        if (ok) resolve(true);
+        else resolve(/cancel/i.test(reason || '') ? false : { error: reason || 'bilinmeyen hata' });
+      });
+    }));
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
 ipcMain.handle('export:png', async (_e, dataUrl) => {
   const base = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : 'Tahta';
   const res = await dialog.showSaveDialog(win, {
@@ -612,6 +699,8 @@ function buildMenu() {
         { label: 'Farklı kaydet…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('saveAs') },
         { type: 'separator' },
         { label: 'Resim olarak dışa aktar (PNG)…', accelerator: 'CmdOrCtrl+E', click: () => send('exportPng') },
+        { label: 'PDF olarak dışa aktar…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('exportPdf') },
+        { label: 'Yazdır…', accelerator: 'CmdOrCtrl+P', click: () => send('print') },
         { label: "Obsidian'dan ekle… (B)", click: () => send('obsidian') },
         { label: 'Obsidian bölümlerini yenile', click: () => send('obsidianRefreshAll') },
         { type: 'separator' },
