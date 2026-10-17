@@ -1,0 +1,224 @@
+/* "Obsidian'dan ekle" seçicisi — obsidian-picker.js tarafından oluşturulan DOM.
+   Tüm seçiciler #obsidianPicker altında kapsanır. Renkler styles.css
+   değişkenlerinden gelir, böylece açık ve koyu tema birlikte çalışır. */
+
+#obsidianPicker {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 25, 40, 0.35);
+  z-index: 38;
+  display: grid;
+  place-items: center;
+}
+
+#obsidianPicker .obsidian-card {
+  position: static;
+  width: min(1200px, 94vw);
+  height: min(760px, 90vh);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+/* ----- Başlık satırı ----- */
+#obsidianPicker .obsidian-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#obsidianPicker .obsidian-head h2 {
+  margin: 0;
+  font-size: 18px;
+  flex: 1;
+}
+#obsidianPicker .obsidian-vault {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  background: var(--chip-bg);
+  color: var(--text);
+  outline: none;
+  max-width: 320px;
+}
+#obsidianPicker .obsidian-vault:focus { border-color: var(--focus-border); }
+#obsidianPicker .obsidian-vault:disabled { opacity: 0.55; }
+
+/* ----- Üç sütun ----- */
+#obsidianPicker .obsidian-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 14px;
+}
+#obsidianPicker .obsidian-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+#obsidianPicker .obsidian-notes { flex: 28 1 0; }
+#obsidianPicker .obsidian-outline { flex: 30 1 0; }
+#obsidianPicker .obsidian-preview-col { flex: 42 1 0; }
+
+/* ----- Arama ve listeler ----- */
+#obsidianPicker .obsidian-search {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  outline: none;
+  background: var(--chip-bg);
+  color: var(--text);
+}
+#obsidianPicker .obsidian-search:focus { border-color: var(--focus-border); }
+
+#obsidianPicker .obsidian-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+/* ----- Not satırları ----- */
+#obsidianPicker .obsidian-note {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+#obsidianPicker .obsidian-note .nname,
+#obsidianPicker .obsidian-entry .obsidian-entry-text {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#obsidianPicker .obsidian-note .nname { font-weight: 600; }
+#obsidianPicker .obsidian-note .npath {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#obsidianPicker .obsidian-note.active { background: var(--hover); }
+#obsidianPicker .obsidian-note.selected {
+  background: var(--active);
+  color: var(--active-fg);
+}
+#obsidianPicker .obsidian-note.selected .npath {
+  color: var(--active-fg);
+  opacity: 0.75;
+}
+
+/* ----- Başlık / blok satırları ----- */
+#obsidianPicker .obsidian-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+#obsidianPicker .obsidian-entry:hover { background: var(--hover); }
+#obsidianPicker .obsidian-entry.selected {
+  background: var(--active);
+  color: var(--active-fg);
+}
+#obsidianPicker .obsidian-entry-text {
+  flex: 1;
+  min-width: 0;
+}
+#obsidianPicker .obsidian-h {
+  flex: none;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+#obsidianPicker .obsidian-entry.selected .obsidian-h {
+  color: var(--active-fg);
+  border-color: var(--active-border);
+}
+#obsidianPicker .obsidian-label { padding: 6px 8px 2px; }
+
+/* ----- Önizleme ----- */
+#obsidianPicker .obsidian-widths {
+  display: flex;
+  gap: 6px;
+}
+#obsidianPicker .obsidian-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--thumb-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  place-items: start center;
+}
+#obsidianPicker .obsidian-preview.msg { place-items: center; }
+#obsidianPicker .obsidian-preview img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 4px;
+}
+
+#obsidianPicker .obsidian-add {
+  align-self: stretch;
+  text-align: center;
+  font-weight: 600;
+  background: var(--active);
+  border-color: var(--active-border);
+  color: var(--active-fg);
+}
+#obsidianPicker .obsidian-add:hover:not(:disabled) { border-color: var(--active-fg); }
+#obsidianPicker .obsidian-add:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: var(--chip-bg);
+  border-color: var(--panel-border);
+  color: var(--muted);
+}
+
+/* ----- Durum metinleri ----- */
+#obsidianPicker .obsidian-msg {
+  font-size: 13px;
+  padding: 8px;
+  margin: 0;
+}
+#obsidianPicker .obsidian-error {
+  font-size: 13px;
+  padding: 8px;
+  margin: 0;
+  color: var(--danger-fg);
+  white-space: pre-wrap;
+}
+
+/* ----- Vault yok ----- */
+#obsidianPicker .obsidian-none {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+#obsidianPicker .obsidian-none.hidden { display: none; }

@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'" />
+  <title>Beyaz Tahta</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="obsidian.css" />
+</head>
+<body>
+  <canvas id="board"></canvas>
+  <textarea id="editor" spellcheck="false"></textarea>
+  <input id="imageInput" type="file" accept="image/*,application/pdf,.pdf" multiple hidden />
+
+  <!-- Ana araç çubuğu. .tgroup içindeki araçlar tek düğmede toplanır (app.js "Araç grupları"); düğme son
+       kullanılan aracın ikonunu gösterir, diğerleri açılır menüdedir -->
+  <div id="toolbar" class="panel">
+    <button class="tool" data-tool="select" title="Seç">
+      <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg>
+    </button>
+    <button class="tool" data-tool="hand" title="Kaydır — taşımak için boşluk tuşunu veya orta fare düğmesini basılı tut">
+      <svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 013 0V12m0-1.5v-6a1.5 1.5 0 013 0V12m0-5.5a1.5 1.5 0 013 0V12m0-3.5a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-2a6 6 0 01-5-2.7L4.6 14a1.6 1.6 0 012.6-1.8L8 13"/></svg>
+    </button>
+    <span class="sep"></span>
+    <div class="tgroup" data-group="pen" data-title="Kalemler">
+      <button class="tool" data-tool="pen" title="Kalem — Shift/Ctrl basılı tutarak düz çiz">
+        <svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8a2.1 2.1 0 00-3-3L5 16z"/><path d="M14 7l3 3"/></svg>
+      </button>
+      <button class="tool" data-tool="highlighter" title="Fosforlu kalem">
+        <svg viewBox="0 0 24 24"><path d="M9 11l-5 5v4h4l5-5"/><path d="M9 11l6-6 4 4-6 6z"/><path d="M3 21h8" class="accent"/></svg>
+      </button>
+      <button class="tool" data-tool="tempHighlighter" title="Geçici fosforlu kalem — basılı tutarken kalır, bırakınca söner">
+        <svg viewBox="0 0 24 24"><path d="M9 11l-5 5v4h4l5-5"/><path d="M9 11l6-6 4 4-6 6z"/><path d="M3 21h2M8 21h1M12 21h0.5" class="accent"/></svg>
+      </button>
+    </div>
+    <button class="tool" data-tool="eraser" title="Silgi">
+      <svg viewBox="0 0 24 24"><path d="M7 21h12"/><path d="M5.5 15.5l9-9a2 2 0 012.8 0l2.2 2.2a2 2 0 010 2.8L12 19H8z"/><path d="M9 12l5 5"/></svg>
+    </button>
+    <button class="tool" data-action="ruler" title="Cetvel — sürükle: taşı, düğme veya tekerlek: döndür, kenarı boyunca kalemle düz çiz">
+      <svg viewBox="0 0 24 24"><path d="M3 15.5L15.5 3 21 8.5 8.5 21z"/><path d="M7 11.5l1.8 1.8M9.5 9l2.5 2.5M12 6.5l1.8 1.8M14.5 4l2.5 2.5"/></svg>
+    </button>
+    <span class="sep"></span>
+    <div class="tgroup" data-group="shape" data-title="Şekiller">
+      <button class="tool" data-tool="rect" title="Dikdörtgen">
+        <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5"/></svg>
+      </button>
+      <button class="tool" data-tool="ellipse" title="Elips">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></svg>
+      </button>
+      <button class="tool" data-tool="line" title="Çizgi">
+        <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg>
+      </button>
+      <button class="tool" data-tool="arrow" title="Ok">
+        <svg viewBox="0 0 24 24"><path d="M5 19L19 5M10 5h9v9"/></svg>
+      </button>
+    </div>
+    <span class="sep"></span>
+    <div class="tgroup" data-group="text" data-title="Metin ve not">
+      <button class="tool" data-tool="text" title="Metin">
+        <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg>
+      </button>
+      <button class="tool" data-tool="note" title="Yapışkan not">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v10l-6 6H4z"/><path d="M14 20v-6h6"/></svg>
+      </button>
+    </div>
+    <div class="tgroup" data-group="insert" data-title="Ekle">
+      <button class="tool" data-action="image" title="Resim veya PDF ekle — yapıştırma ve sürükle-bırak da çalışır">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/></svg>
+      </button>
+      <button class="tool" data-action="obsidian" title="Obsidian'dan ekle — bir notun başlığını, bloğunu ya da tamamını ekler">
+        <svg viewBox="0 0 24 24"><path d="M9.5 3L5 9.5l2 8.5 6.5 3.5 4.5-6-1.5-8z"/><path d="M9.5 3l1 8 5 1M7 18l3.5-7"/></svg>
+      </button>
+    </div>
+    <span class="sep"></span>
+    <button class="tool" data-action="undo" title="Geri al (Ctrl+Z)">
+      <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>
+    </button>
+    <button class="tool" data-action="redo" title="Yinele (Ctrl+Y)">
+      <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 000 10h3"/></svg>
+    </button>
+  </div>
+
+  <!-- Özellik paneli: renk, kalınlık, dolgu -->
+  <div id="props" class="panel">
+    <div class="row" id="brushRow"></div>
+    <div class="row" id="colorRow"></div>
+    <div class="row" id="noteColorRow"></div>
+    <div class="row" id="widthRow"></div>
+    <div class="row" id="fontRow"></div>
+    <div class="row" id="fillRow">
+      <button class="chip" data-fill="none" title="Dolgu yok">Boş</button>
+      <button class="chip" data-fill="soft" title="Açık dolgu">Açık</button>
+      <button class="chip" data-fill="solid" title="Tam dolgu">Dolu</button>
+    </div>
+    <div class="row" id="shapeRow">
+      <button class="chip" data-to-shape title="Elle çizilen çizgi, üçgen, dörtgen ve daireleri düzgün şekle çevirir">Şekle dönüştür</button>
+    </div>
+    <div class="row" id="eraserRow">
+      <button class="chip" data-eraser-mode="stroke" title="Değdiği çizginin tamamını siler">Bütün çizgi</button>
+      <button class="chip" data-eraser-mode="partial" title="Yalnızca silginin geçtiği kısmı siler">Kısmi</button>
+      <button class="chip" data-erase-all title="Açıkken silgi notları ve resimleri de siler">Not ve resimleri de sil</button>
+    </div>
+    <div class="row" id="obsidianRow">
+      <button class="chip" data-obsidian="refresh" title="Seçili bölümleri Obsidian'daki güncel hâlleriyle yeniden oluşturur">Kaynaktan yenile</button>
+      <button class="chip" data-obsidian="open" title="Notu Obsidian'da bu bölümde açar (çift tık da açar)">Obsidian'da aç</button>
+    </div>
+    <div class="row" id="arrangeRow">
+      <button class="chip" data-arrange="front" title="Öne getir ( ] )">Öne</button>
+      <button class="chip" data-arrange="back" title="Arkaya gönder ( [ )">Arkaya</button>
+      <button class="chip" data-arrange="duplicate" title="Çoğalt (Ctrl+D)">Çoğalt</button>
+      <button class="chip danger" data-arrange="delete" title="Sil (Delete)">Sil</button>
+    </div>
+  </div>
+
+  <!-- Sol üst: dosya ve arka plan -->
+  <div id="filebar" class="panel">
+    <button class="tool" data-action="menu" title="Menü">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <button class="tool" data-action="gallery" title="Tahtalarım (Ctrl+G)">
+      <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
+    </button>
+    <span id="saveState" title="Kaydetme durumu">Kaydedildi</span>
+  </div>
+  <div id="menu" class="panel hidden">
+    <button data-cmd="gallery">Tahtalarım <kbd>Ctrl+G</kbd></button>
+    <button data-cmd="new">Yeni tahta <kbd>Ctrl+N</kbd></button>
+    <button data-cmd="open">Aç… <kbd>Ctrl+O</kbd></button>
+    <button data-cmd="saveAs">Farklı kaydet… <kbd>Ctrl+Shift+S</kbd></button>
+    <button data-cmd="exportPng">PNG olarak dışa aktar <kbd>Ctrl+E</kbd></button>
+    <button data-cmd="obsidian">Obsidian'dan ekle… <kbd>B</kbd></button>
+    <button data-cmd="obsidianRefreshAll">Obsidian bölümlerini yenile</button>
+    <button data-cmd="showFolder">Dosya konumunu göster</button>
+    <button data-cmd="createVault">Yeni vault oluştur…</button>
+    <button data-cmd="openVault">Klasörü vault olarak aç…</button>
+    <button data-cmd="clear">Tahtayı temizle</button>
+    <hr />
+    <div class="menu-label">Arka plan deseni</div>
+    <div class="row" id="bgPatternRow">
+      <button class="chip" data-bg="none">Boş</button>
+      <button class="chip" data-bg="grid">Kareli</button>
+      <button class="chip" data-bg="dots">Noktalı</button>
+      <button class="chip" data-bg="lines">Çizgili</button>
+    </div>
+    <div class="menu-label">Arka plan rengi</div>
+    <div class="row" id="bgColorRow"></div>
+    <div class="menu-label">Tema</div>
+    <div class="row" id="themeRow">
+      <button class="chip" data-theme-mode="light">Açık</button>
+      <button class="chip" data-theme-mode="dark">Koyu</button>
+      <button class="chip" data-theme-mode="system">Sistem</button>
+    </div>
+    <hr />
+    <button data-cmd="help">Rehber ve kısayollar <kbd>F1</kbd></button>
+  </div>
+
+  <!-- Sağ alt: yakınlaştırma -->
+  <div id="zoombar" class="panel">
+    <button class="tool" data-action="zoomOut" title="Uzaklaştır (Ctrl -)">
+      <svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>
+    </button>
+    <button id="zoomLabel" data-action="zoomReset" title="%100'e dön (Ctrl+0)">100%</button>
+    <button class="tool" data-action="zoomIn" title="Yakınlaştır (Ctrl +)">
+      <svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></svg>
+    </button>
+    <button class="tool" data-action="zoomFit" title="Tümünü sığdır (Ctrl+1)">
+      <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <!-- Tahta galerisi -->
+  <div id="gallery" class="hidden">
+    <div class="panel gallery-card">
+      <div class="gallery-head">
+        <h2>Tahtalarım</h2>
+        <input id="gallerySearch" type="search" placeholder="Tahta ara…" spellcheck="false" />
+        <button class="chip" data-gcmd="close">Kapat</button>
+      </div>
+      <div class="gallery-vaults">
+        <span class="muted">Vault:</span>
+        <div id="vaultList"></div>
+        <button class="chip" data-gcmd="createVault" title="Seçtiğin konumda yeni, boş bir vault klasörü oluşturur">Yeni vault…</button>
+        <button class="chip" data-gcmd="openVault">Vault aç…</button>
+      </div>
+      <div class="gallery-folder">
+        <span id="galleryDir"></span>
+        <button class="chip" data-gcmd="showFolder">Explorer'da göster</button>
+      </div>
+      <div id="galleryGrid"></div>
+    </div>
+  </div>
+
+  <!-- Rehber (F1): sol tarafta sekmeler, sağda içerik. Kısayol tablosu app.js'te SHORTCUTS'tan üretilir. -->
+  <div id="help" class="hidden">
+    <div class="panel help-card">
+      <div class="help-head">
+        <h2>Beyaz Tahta Rehberi</h2>
+        <input id="helpSearch" type="search" placeholder="Rehberde ara… (ör. cetvel, pdf, vault)" spellcheck="false" />
+        <button class="chip" id="helpClose">Kapat <kbd>Esc</kbd></button>
+      </div>
+      <div class="help-body">
+        <nav id="helpNav">
+          <button data-help-tab="start">Başlangıç</button>
+          <button data-help-tab="draw">Çizim araçları</button>
+          <button data-help-tab="edit">Seçme ve düzenleme</button>
+          <button data-help-tab="text">Metin ve notlar</button>
+          <button data-help-tab="insert">Resim, PDF, Obsidian</button>
+          <button data-help-tab="boards">Tahtalar ve vault</button>
+          <button data-help-tab="view">Görünüm ve dışa aktarma</button>
+          <button data-help-tab="keys">Kısayollar</button>
+          <button data-help-tab="faq">Sorun giderme</button>
+        </nav>
+        <div id="helpContent">
+
+          <section data-help-section="start">
+            <h3>Beyaz Tahta nedir?</h3>
+            <p>Sonsuz büyüklükte bir tuval. Kalemle yazıp çizebilir, şekil, metin, yapışkan not, resim, PDF sayfası ve Obsidian notlarını aynı tahtaya koyabilirsin. Tahta her değişiklikten sonra kendiliğinden kaydedilir; sol üstteki yazı <b>Kaydedildi</b> ya da <b>Kaydediliyor…</b> der.</p>
+
+            <h3>İlk çizimin</h3>
+            <ol>
+              <li>Üstteki araç çubuğundan kalemi seç (ya da <kbd>2</kbd> tuşuna bas) ve tahtaya çiz.</li>
+              <li>Yanlış yaptıysan <kbd>Ctrl+Z</kbd> ile geri al, <kbd>Ctrl+Y</kbd> ile yinele.</li>
+              <li>Çizdiğin bir şeyi taşımak için <kbd>1</kbd> ile Seç aracına geç, üstüne tıkla ve sürükle.</li>
+              <li>Renk ve kalınlığı sağdaki <b>özellik panelinden</b> değiştir (aşağıya bak).</li>
+            </ol>
+
+            <h3>Ekranın düzeni</h3>
+            <ul>
+              <li><b>Üst orta – araç çubuğu:</b> kalemler, silgi, cetvel, şekiller, metin/not, ekleme araçları, geri al / yinele.</li>
+              <li><b>Sol üst:</b> menü düğmesi (☰), <b>Tahtalarım</b> galerisi ve kaydetme durumu.</li>
+              <li><b>Sağ – özellik paneli:</b> seçili araca ya da seçili nesnelere göre değişir; renk, kalınlık, dolgu, yazı boyutu, fırça türü gibi ayarlar burada.</li>
+              <li><b>Sağ alt:</b> uzaklaştır / yakınlaştır, yüzdeye tıklayınca %100'e dönüş, "tümünü sığdır" düğmesi.</li>
+            </ul>
+
+            <h3>Araç grupları</h3>
+            <p>Birbirine benzeyen araçlar (kalemler, şekiller, metin/not, ekle) tek düğmede toplanır. Düğme <b>en son kullandığın aracı</b> gösterir. Gruptaki diğer araçlara ulaşmak için:</p>
+            <ul>
+              <li>aktif düğmeye <b>bir kez daha tıkla</b>, ya da</li>
+              <li>düğmeye <b>sağ tıkla</b>, ya da</li>
+              <li>düğmeyi <b>yarım saniye basılı tut</b> (kalemle sağ tık zor olduğu için).</li>
+            </ul>
+            <p class="tip">Araçların üzerindeki küçük harf/rakam rozetleri kısayol tuşudur. Fareyle üzerine gelince açıklama da görürsün.</p>
+
+            <h3>Tahtada gezinme</h3>
+            <ul>
+              <li><b>Kaydırma:</b> fare tekerleği (yatay için <kbd>Shift</kbd> + tekerlek), dokunmatik yüzeyde iki parmak.</li>
+              <li><b>Tutup sürükleme:</b> <kbd>Boşluk</kbd> tuşunu basılı tutup sürükle, ya da fare <b>orta tuşuyla</b> sürükle. Araç çubuğundaki "Kaydır" (el) aracı da aynısını yapar.</li>
+              <li><b>Yakınlaştırma:</b> <kbd>Ctrl</kbd> + tekerlek (imlecin olduğu yere yakınlaşır), <kbd>Ctrl +</kbd> / <kbd>Ctrl -</kbd>, ya da dokunmatik ekranda iki parmakla kıstırma.</li>
+              <li><b>%100'e dön:</b> <kbd>Ctrl+0</kbd>. <b>Tüm çizimi ekrana sığdır:</b> <kbd>Ctrl+1</kbd>.</li>
+            </ul>
+            <p class="tip">Tahtanın son görünümü (konum ve yakınlık) dosyayla birlikte saklanır; tahtayı açtığında kaldığın yerden devam edersin.</p>
+          </section>
+
+          <section data-help-section="draw">
+            <h3>Kalem <kbd>2</kbd> / <kbd>P</kbd></h3>
+            <p>Serbest çizim aracı. Kalem basıncı destekleyen bir ekran kalemi kullanıyorsan çizgi bastıkça kalınlaşır. Kalemin arka ucu (silgi ucu) varsa her zaman siler.</p>
+            <h4>Fırça türleri</h4>
+            <p>Kalem seçiliyken özellik panelinin üst satırından seçilir. Seçili çizgilere de uygulanabilir:</p>
+            <ul>
+              <li><b>Kalem</b> – düz, standart çizgi.</li>
+              <li><b>Kaligrafi</b> – eğik keskin uç; çizgi yöne göre incelip kalınlaşır.</li>
+              <li><b>Fırça kalem</b> – yavaş çizince kalın, hızlı çizince ince; uçları sivri.</li>
+              <li><b>Dolma kalem</b> – hafifçe değişen kalınlıkta mürekkep.</li>
+              <li><b>Kesikli</b> – kesik kesik çizgi.</li>
+              <li><b>Oklu</b> – çizginin sonuna ok ucu ekler.</li>
+              <li><b>Gökkuşağı</b> ve <b>Galaksi</b> – kendi renkleri vardır, renk seçimi uygulanmaz.</li>
+              <li><b>Bant</b> – desenli yapışkan bant (washi).</li>
+            </ul>
+            <h4>Düz çizgi çizmek</h4>
+            <p>Çizerken <kbd>Shift</kbd> ya da <kbd>Ctrl</kbd> tuşunu basılı tut: tuşa bastığın noktadan itibaren dümdüz bir çizgi çıkar. Çizgi yatay, dikey ve 45° açılara mıknatıslanır.</p>
+            <h4>Şekle dönüştür</h4>
+            <p>Özellik panelindeki <b>Şekle dönüştür</b> düğmesi açıkken elle çizdiğin çizgi, üçgen, dörtgen, beşgen ve daire; düzgün şekle çevrilir. Dönüşüm ayrı bir geri alma adımıdır: <kbd>Ctrl+Z</kbd> el çizimini geri getirir. Düz çizgi (Shift/Ctrl) ya da cetvel kullandıysan dönüşüm uygulanmaz. Dönüşümü istemiyorsan düğmeyi kapat.</p>
+
+            <h3>Fosforlu kalem <kbd>3</kbd> / <kbd>H</kbd></h3>
+            <p>Yarı saydam, kalın vurgulama kalemi. Metnin ya da çizimin üstünü örtmeden işaretlemek için.</p>
+
+            <h3>Geçici fosforlu kalem <kbd>4</kbd> / <kbd>G</kbd></h3>
+            <p>Sunum ve anlatım için işaretçi gibi kullan. Çizdiğin şey ekranda <b>basılı tuttuğun sürece kalır</b>, bırakınca yavaşça kaybolur. Tahtaya kaydedilmez ve geri alma listesine girmez.</p>
+
+            <h3>Silgi <kbd>5</kbd> / <kbd>E</kbd></h3>
+            <ul>
+              <li><b>Bütün çizgi:</b> değdiğin çizgiyi tümüyle siler.</li>
+              <li><b>Kısmi:</b> yalnızca silginin geçtiği kısmı siler, çizgi ikiye bölünür.</li>
+              <li><b>Not ve resimleri de sil:</b> kapalıyken silgi yalnızca çizgi ve şekillere dokunur; açıkken notları, metinleri ve resimleri de siler. Yanlışlıkla resim silmemek için varsayılan olarak kapalıdır.</li>
+            </ul>
+
+            <h3>Cetvel <kbd>6</kbd> / <kbd>R</kbd></h3>
+            <p>Ekrana yarı saydam bir cetvel koyar; tekrar basınca kaldırır. Cetvel tahtaya kaydedilmez, yalnızca çizim yardımcısıdır.</p>
+            <ul>
+              <li><b>Taşıma:</b> cetvelin gövdesinden tutup sürükle. Cetvelin üzerine basmak, hangi araç seçili olursa olsun cetveli taşır.</li>
+              <li><b>Döndürme:</b> mavi düğmeden tut ve döndür ya da imleç cetvelin üstündeyken <b>fare tekerleğini</b> çevir (1°'lik adımlar, <kbd>Shift</kbd> ile 15°'lik). Düğmeyle döndürürken yatay, dikey ve 45° açılara yapışır; <kbd>Shift</kbd> ile 15°'lik adımlarla döner.</li>
+              <li><b>Düz çizgi:</b> kalemi (ya da fosforlu kalemi) cetvelin kenarının hemen yanında başlat; çizgi o kenar boyunca dümdüz çıkar.</li>
+            </ul>
+
+            <h3>Şekiller</h3>
+            <p><b>Dikdörtgen</b> <kbd>7</kbd>/<kbd>D</kbd>, <b>Elips</b> <kbd>8</kbd>/<kbd>O</kbd>, <b>Çizgi</b> <kbd>9</kbd>/<kbd>L</kbd>, <b>Ok</b> <kbd>0</kbd>/<kbd>A</kbd>. Tahtada basılı tutup sürükleyerek çiz.</p>
+            <ul>
+              <li><kbd>Shift</kbd> ile: dikdörtgen kare, elips daire olur; çizgi ve ok 15°'lik açılara oturur.</li>
+              <li><b>Dolgu:</b> dikdörtgen ve elips için panelden <i>Boş</i>, <i>Açık</i> (yarı saydam) ya da <i>Dolu</i> seç.</li>
+              <li>Renk ve kalınlık panelden ayarlanır; seçili şekillere de uygulanır.</li>
+            </ul>
+          </section>
+
+          <section data-help-section="edit">
+            <h3>Seçme <kbd>1</kbd> / <kbd>V</kbd></h3>
+            <ul>
+              <li><b>Tek nesne:</b> üzerine tıkla. Seçince etrafında çerçeve ve köşelerde tutamaçlar belirir.</li>
+              <li><b>Birden fazla nesne:</b> boş bir yerden başlayarak nesnelerin çevresini çiz (<b>kement</b>); ya da <kbd>Shift</kbd> basılıyken tek tek tıklayarak seçime ekle / çıkar. <kbd>Ctrl+A</kbd> hepsini seçer.</li>
+              <li><b>Seçimi bırak:</b> boş bir yere tıkla ya da <kbd>Esc</kbd>.</li>
+            </ul>
+
+            <h3>Taşıma ve boyutlandırma</h3>
+            <ul>
+              <li><b>Taşı:</b> seçili nesneyi sürükle ya da ok tuşlarına bas (1 piksel; <kbd>Shift</kbd> ile 10 piksel).</li>
+              <li><b>Boyutlandır:</b> köşedeki tutamacı sürükle. Dikdörtgen, elips, çokgen ve notlar serbestçe; diğer nesneler oranı koruyarak büyür.</li>
+              <li><b>Çizgi ve ok uçları:</b> tek bir çizgi ya da ok seçiliyken iki ucundaki tutamaçlardan uçlarını ayrı ayrı taşıyabilirsin.</li>
+            </ul>
+
+            <h3>Kopyalama ve çoğaltma</h3>
+            <ul>
+              <li><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd>: kopyala, kes, yapıştır. Yapıştırılan nesneler imlecin olduğu yere gelir.</li>
+              <li><kbd>Ctrl+D</kbd> ya da panelden <b>Çoğalt</b>: seçileni hemen yanına kopyalar.</li>
+              <li>Başka bir tahtaya da kopyalayıp yapıştırabilirsin.</li>
+            </ul>
+
+            <h3>Sıralama ve silme</h3>
+            <ul>
+              <li><kbd>]</kbd> öne getirir, <kbd>[</kbd> arkaya gönderir (panelde <b>Öne</b> / <b>Arkaya</b>). Üst üste binen nesnelerde hangisinin üstte duracağını belirler.</li>
+              <li><kbd>Delete</kbd> ya da <kbd>Backspace</kbd> seçileni siler (panelde <b>Sil</b>).</li>
+            </ul>
+
+            <h3>Özellik paneli</h3>
+            <p>Sağdaki panel o an ne yaptığına göre değişir: kalem seçiliyken fırça, renk ve kalınlık; şekil seçiliyken dolgu; metin seçiliyken yazı boyutu; not seçiliyken not rengi; silgi seçiliyken silgi ayarları görünür. Bir nesne seçiliyse yaptığın değişiklik <b>o nesneye</b>, seçili nesne yoksa <b>sonraki çizimlerine</b> uygulanır.</p>
+
+            <h3>Geri al / yinele</h3>
+            <p><kbd>Ctrl+Z</kbd> ve <kbd>Ctrl+Y</kbd> (ya da <kbd>Ctrl+Shift+Z</kbd>). Her çizim, taşıma, silme ve ayar değişikliği ayrı bir adımdır. Araç çubuğunun sağındaki oklar da aynı işi yapar.</p>
+          </section>
+
+          <section data-help-section="text">
+            <h3>Metin <kbd>T</kbd></h3>
+            <ul>
+              <li>Tahtada boş bir yere tıkla ve yazmaya başla. Zaten yazılı bir metne tıklarsan o metni düzenlersin.</li>
+              <li>Yazmayı bitirmek için <kbd>Esc</kbd> ya da <kbd>Ctrl+Enter</kbd> bas, ya da başka bir yere tıkla. Boş bırakılan metin kendiliğinden silinir.</li>
+              <li>Seç aracıyla bir metne <b>çift tıklayarak</b> sonradan düzenleyebilirsin.</li>
+              <li>Renk ve yazı boyutu panelden seçilir; seçili metinlere de uygulanır.</li>
+            </ul>
+
+            <h3>Yapışkan not <kbd>N</kbd></h3>
+            <ul>
+              <li>Tıkladığın yerde renkli bir not kâğıdı açılır ve hemen yazabilirsin. Not yazdıkça yüksekliği metne göre uzar.</li>
+              <li>Not rengini ve yazı boyutunu panelden değiştir.</li>
+              <li>Tutamaçlardan boyutunu değiştirebilir, sürükleyerek taşıyabilirsin.</li>
+            </ul>
+
+            <h3>Panodan yapıştırma</h3>
+            <p>Başka bir yerden kopyaladığın <b>düz yazıyı</b> tahtaya <kbd>Ctrl+V</kbd> ile yapıştırırsan, imlecin olduğu yerde bir metin nesnesi olur. Kopyaladığın <b>resim</b> (ör. ekran görüntüsü) ise resim olarak eklenir.</p>
+          </section>
+
+          <section data-help-section="insert">
+            <h3>Resim ekleme <kbd>I</kbd></h3>
+            <p>Üç yol var:</p>
+            <ul>
+              <li>Araç çubuğundaki <b>Ekle</b> grubundan resim düğmesine tıkla (ya da <kbd>I</kbd>) ve dosyayı seç. Birden fazla dosya seçebilirsin.</li>
+              <li>Dosyayı Gezgin'den tahtaya <b>sürükle-bırak</b> yap. Bıraktığın yere eklenir.</li>
+              <li>Panodaki bir resmi <kbd>Ctrl+V</kbd> ile yapıştır (ör. <kbd>Win+Shift+S</kbd> ile aldığın ekran görüntüsü).</li>
+            </ul>
+            <p>Eklenen resim tahta dosyasının içine gömülür; orijinal dosyayı silsen bile tahtada kalır. Çok büyük resimler tahta dosyasını da büyütür.</p>
+
+            <h3>PDF ekleme</h3>
+            <p>PDF'i resim düğmesinden seç ya da pencereye sürükle. <b>Her sayfa tahtaya ayrı bir resim olarak</b> alt alta eklenir; üzerine kalemle not alabilirsin. 30 sayfadan uzun PDF'lerde hepsinin eklenmesi istenip istenmediği sorulur ve biraz sürebilir.</p>
+
+            <h3>Obsidian'dan ekle <kbd>B</kbd></h3>
+            <p>Obsidian vault'undaki bir notu (ya da notun bir bölümünü) tahtaya, <b>Obsidian'daki görünümüne yakın</b> bir resim olarak koyar. Formüller (KaTeX), callout kutuları, [[bağlantılar]], görseller, işaretlemeler ve görev listeleri desteklenir.</p>
+            <ol>
+              <li><kbd>B</kbd> tuşuna bas ya da araç çubuğunda Ekle grubundan Obsidian düğmesine tıkla.</li>
+              <li>Açılan pencerede vault'u seç (bulunamazsa "Vault klasörünü seç…" ile elle göster).</li>
+              <li>Üstteki arama kutusuna notun adını yaz; <kbd>↑</kbd> <kbd>↓</kbd> ile gez, <kbd>Enter</kbd> ile notu seç.</li>
+              <li>Notun <b>tamamını</b>, bir <b>başlığını</b> (alt başlıklarıyla) ya da bir <b>bloğunu</b> seç. Sağda önizleme çıkar.</li>
+              <li>Genişliği <i>Dar / Orta / Geniş</i> seçeneğinden ayarla.</li>
+              <li><b>Tahtaya ekle</b> düğmesine bas (ya da <kbd>Ctrl+Enter</kbd>).</li>
+            </ol>
+            <h4>Eklendikten sonra</h4>
+            <ul>
+              <li>Eklenen bölüme <b>çift tıklarsan</b> not Obsidian'da o bölümde açılır (panelde <b>Obsidian'da aç</b>).</li>
+              <li>Notu Obsidian'da değiştirdiysen, bölümü seçip panelden <b>Kaynaktan yenile</b>'ye bas. Tahtadaki tüm Obsidian bölümlerini birden güncellemek için menüden <b>Obsidian bölümlerini yenile</b>'yi kullan.</li>
+              <li>Bölüm sıradan bir resim gibi taşınır, boyutlandırılır, kopyalanır ve silinir.</li>
+            </ul>
+            <p class="tip">Obsidian uygulamasının bilgisayarında kurulu ve vault'un daha önce Obsidian'da açılmış olması gerekir.</p>
+          </section>
+
+          <section data-help-section="boards">
+            <h3>Tahta nedir, nerede saklanır?</h3>
+            <p>Her tahta tek bir <b>.tahta</b> dosyasıdır. Tahtaların durduğu klasöre <b>vault</b> denir. Varsayılan vault <i>Belgeler\Beyaz Tahta</i> klasörüdür. Bir klasörü vault olarak açmak içindeki dosyaları taşımaz.</p>
+
+            <h3>Tahtalarım galerisi <kbd>Ctrl+G</kbd></h3>
+            <p>Vault'taki bütün tahtaları küçük resimleriyle gösterir.</p>
+            <ul>
+              <li>Karta tıkla ya da <kbd>Enter</kbd>: tahtayı aç.</li>
+              <li>Üstteki arama kutusu: tahtalar arasında ara; <kbd>Enter</kbd> ilk sonucu açar.</li>
+              <li><b>Yeni tahta</b> (<kbd>Ctrl+N</kbd>): boş bir tahta başlatır.</li>
+              <li>Kartın üzerindeki kalem simgesi ya da <kbd>F2</kbd>: <b>yeniden adlandır</b>. Çöp kutusu simgesi: <b>sil</b> (onay sorar).</li>
+              <li><b>Explorer'da göster</b>: vault klasörünü Gezgin'de açar.</li>
+            </ul>
+
+            <h3>Vault'lar</h3>
+            <ul>
+              <li><b>Yeni vault…</b>: seçtiğin konumda yeni, boş bir klasör oluşturur.</li>
+              <li><b>Vault aç…</b>: var olan bir klasörü (ör. Google Drive içindeki bir klasör) vault olarak ekler.</li>
+              <li>Vault'lar galerinin üstünde listelenir; birine tıklayınca o vault'a geçersin. Her vault en son açık tahtasını hatırlar.</li>
+              <li>Listeden çıkarmak vault'u ya da dosyalarını silmez, yalnızca listeden kaldırır.</li>
+            </ul>
+
+            <h3>Dosya işlemleri</h3>
+            <ul>
+              <li><b>Aç…</b> (<kbd>Ctrl+O</kbd>): vault dışındaki bir .tahta dosyasını açar; vault değişmez.</li>
+              <li><b>Kaydet</b> (<kbd>Ctrl+S</kbd>): zaten otomatik kaydeder, bu sadece anında kaydettirir.</li>
+              <li><b>Farklı kaydet…</b> (<kbd>Ctrl+Shift+S</kbd>): tahtanın bir kopyasını istediğin yere yazar.</li>
+              <li><b>Dosya konumunu göster</b>: açık tahtanın dosyasını Gezgin'de gösterir.</li>
+              <li>Gezgin'de bir .tahta dosyasına çift tıklayınca da Beyaz Tahta'da açılır.</li>
+            </ul>
+
+            <h3>Birden fazla cihazda kullanım</h3>
+            <p>Vault'u Google Drive ya da OneDrive gibi eşitlenen bir klasörde tutarsan aynı tahtalara başka bilgisayardan da erişebilirsin.</p>
+            <ul>
+              <li>Pencereye geri döndüğünde tahta başka cihazda değiştiyse ve sende kaydedilmemiş değişiklik yoksa <b>son hâli otomatik yüklenir</b>.</li>
+              <li>İki cihazda aynı tahtayı farklı değiştirdiysen, diğer cihazın çalışması <b>ezilmez</b>: seninki yanına <b>"(çakışma …)"</b> adlı ayrı bir kopya olarak kaydedilir. İkisini elle karşılaştırıp birleştirebilirsin.</li>
+              <li>Aynı tahtayı iki cihazda aynı anda açık tutmamaya çalış.</li>
+            </ul>
+
+            <h3>Tahtayı temizleme</h3>
+            <p>Menüdeki <b>Tahtayı temizle</b> her şeyi siler (önce onay sorar). Yanlışlıkla yaptıysan <kbd>Ctrl+Z</kbd> ile geri alabilirsin.</p>
+          </section>
+
+          <section data-help-section="view">
+            <h3>Arka plan</h3>
+            <p>Menüden (☰) <b>Arka plan deseni</b>: Boş, Kareli, Noktalı, Çizgili. <b>Arka plan rengi</b>: hazır renkler ya da özel renk seçici. Seçim tahtayla birlikte saklanır, her tahtanın arka planı ayrı olabilir.</p>
+
+            <h3>Tema</h3>
+            <p>Menüden <b>Açık</b>, <b>Koyu</b> ya da <b>Sistem</b> (Windows ayarını izler) seç. Tema bu bilgisayara özeldir, tahtanın arka planından bağımsızdır.</p>
+
+            <h3>PNG olarak dışa aktarma <kbd>Ctrl+E</kbd></h3>
+            <ul>
+              <li>Hiçbir şey seçili değilse <b>tahtadaki her şey</b>, seçili nesneler varsa <b>yalnızca onlar</b> dışa aktarılır.</li>
+              <li>Resim, nesnelerin çevresine küçük bir boşluk bırakılarak kırpılır ve tahtanın arka planıyla birlikte kaydedilir.</li>
+              <li>Çok büyük tahtalarda çözünürlük otomatik düşürülür.</li>
+            </ul>
+
+            <h3>Yakınlaştırma düğmeleri</h3>
+            <p>Sağ alttaki çubuk: <b>−</b> uzaklaştırır, <b>+</b> yakınlaştırır, yüzdeye tıklamak %100'e döner, köşeli ok simgesi tüm çizimi ekrana sığdırır.</p>
+
+            <h3>Tam ekran ve diğer</h3>
+            <p>Üst menü çubuğu normalde gizlidir; <kbd>Alt</kbd> tuşuna basınca görünür. <b>Görünüm → Tam ekran</b> ile tam ekrana geçebilirsin.</p>
+          </section>
+
+          <section data-help-section="keys">
+            <p class="muted">Bu liste araç tanımlarından otomatik üretilir, her zaman günceldir.</p>
+            <h3>Araçlar</h3>
+            <table id="helpToolKeys"></table>
+            <h3>Genel</h3>
+            <table id="helpGeneralKeys"></table>
+          </section>
+
+          <section data-help-section="faq">
+            <h3>Çizdiğim çizgi kendiliğinden şekle dönüşüyor</h3>
+            <p>Kalem seçiliyken özellik panelinde <b>Şekle dönüştür</b> düğmesini kapat. Dönüşüm olduktan sonra <kbd>Ctrl+Z</kbd> el çizimini geri getirir.</p>
+
+            <h3>Silgi resimlerimi ve notlarımı silmiyor</h3>
+            <p>Silgi panelinde <b>Not ve resimleri de sil</b> açık olmalı. Bilerek kapalı gelir.</p>
+
+            <h3>Bir şeyi seçemiyorum / sürüklediğimde çizim yapıyorum</h3>
+            <p>Seç aracında olduğundan emin ol (<kbd>1</kbd> ya da <kbd>V</kbd>). Kalem seçiliyken sürüklemek çizer.</p>
+
+            <h3>Tahtada kaybolduğumu hissediyorum</h3>
+            <p><kbd>Ctrl+1</kbd> ile tüm çizimi ekrana sığdır. <kbd>Ctrl+0</kbd> %100'e döner.</p>
+
+            <h3>"Tahta başka bir cihazda değişmiş" uyarısı</h3>
+            <p>Vault eşitlenen bir klasördeyse bu normaldir. Senin sürümün "(çakışma …)" adlı ayrı bir dosya olarak kaydedildi, hiçbir şey kaybolmadı. Tahtalarım ekranından ikisini de açabilirsin.</p>
+
+            <h3>Tahtalarım ekranında tahtam görünmüyor</h3>
+            <p>Doğru vault'ta olduğundan emin ol (galerinin üstündeki vault listesi). Dosya yalnızca <b>.tahta</b> uzantılıysa ve seçili klasörün içindeyse listelenir. <b>Explorer'da göster</b> ile klasörü kontrol et.</p>
+
+            <h3>PDF ya da resim eklenmedi</h3>
+            <p>Bozuk ya da desteklenmeyen dosyalarda ekranın altında uyarı çıkar. Desteklenen resim biçimleri PNG, JPG, GIF, WebP gibi yaygın olanlardır.</p>
+
+            <h3>Obsidian'dan ekle çalışmıyor</h3>
+            <ul>
+              <li>Obsidian'ın bilgisayarında kurulu ve vault'un en az bir kez Obsidian'da açılmış olması gerekir.</li>
+              <li>Vault listede yoksa seçici penceresindeki <b>Vault klasörünü seç…</b> ile klasörü elle göster.</li>
+              <li>"Not bulunamadı" uyarısı notun taşındığını ya da silindiğini gösterir.</li>
+            </ul>
+
+            <h3>Kalem basıncı çalışmıyor</h3>
+            <p>Basınç yalnızca ekran kalemiyle (ya da basınç destekleyen tabletle) çalışır; fare ve parmak sabit kalınlıkta çizer. Windows'ta kalem sürücüsünün yüklü olduğundan emin ol.</p>
+
+            <h3>Yanlışlıkla bir şeyi sildim</h3>
+            <p><kbd>Ctrl+Z</kbd>. Tahtayı temizlemek de dahil her şey geri alınabilir. Tahtayı kapatıp açtıktan sonra geri alma geçmişi sıfırlanır.</p>
+          </section>
+
+          <p id="helpEmpty" class="muted hidden">Aramanla eşleşen bir şey bulunamadı.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
