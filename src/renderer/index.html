@@ -110,6 +110,16 @@
       <button class="chip" data-arrange="duplicate" title="Çoğalt (Ctrl+D)">Çoğalt</button>
       <button class="chip danger" data-arrange="delete" title="Sil (Delete)">Sil</button>
     </div>
+    <!-- Alt kenardaki sekme: paneli gizler/gösterir; gizliyken araç çubuğunun altında kalır -->
+    <div id="propsTab">
+      <button id="propsToggle" data-props-toggle>
+        <span class="tab-dot hidden"></span>
+        <svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>
+      </button>
+      <button id="propsPin" data-props-pin>
+        <svg viewBox="0 0 24 24"><path d="M9 4h6M10 4v6l-3 4h10l-3-4V4M12 14v6"/></svg>
+      </button>
+    </div>
   </div>
 
   <!-- Sol üst: dosya ve arka plan -->
@@ -135,6 +145,7 @@
     <button data-cmd="openVault">Klasörü vault olarak aç…</button>
     <button data-cmd="clear">Tahtayı temizle</button>
     <hr />
+    <button id="autoSaveToggle" data-autosave role="menuitemcheckbox" title="Kapalıyken değişiklikler yalnızca Ctrl+S ile kaydedilir">Otomatik kaydet <span class="check"></span></button>
     <div class="menu-label">Arka plan deseni</div>
     <div class="row" id="bgPatternRow">
       <button class="chip" data-bg="none">Boş</button>
@@ -192,6 +203,33 @@
     </div>
   </div>
 
+  <!-- PDF eklerken hangi sayfaların ekleneceği -->
+  <div id="pdfPages" class="hidden">
+    <form class="panel pdf-card" id="pdfForm">
+      <h2>PDF ekle</h2>
+      <div class="pdf-file"><span id="pdfName"></span> · <span id="pdfCount"></span> sayfa</div>
+      <label class="pdf-opt">
+        <input type="radio" name="pdfMode" value="all" checked />
+        <span>Tüm sayfalar</span>
+      </label>
+      <label class="pdf-opt">
+        <input type="radio" name="pdfMode" value="range" />
+        <span>Sayfalar</span>
+        <input type="text" id="pdfRange" placeholder="ör. 1-5, 8, 11-13" spellcheck="false" autocomplete="off" />
+      </label>
+      <label class="pdf-opt">
+        <input type="radio" name="pdfMode" value="from" />
+        <span><input type="number" id="pdfFrom" min="1" value="1" />. sayfadan başlayarak</span>
+        <span><input type="number" id="pdfTake" min="1" value="5" /> sayfa</span>
+      </label>
+      <div id="pdfSummary" class="muted"></div>
+      <div class="pdf-actions">
+        <button type="button" class="chip" id="pdfCancel">Vazgeç <kbd>Esc</kbd></button>
+        <button type="submit" class="chip selected" id="pdfOk">Ekle <kbd>Enter</kbd></button>
+      </div>
+    </form>
+  </div>
+
   <!-- Rehber (F1): sol tarafta sekmeler, sağda içerik. Kısayol tablosu app.js'te SHORTCUTS'tan üretilir. -->
   <div id="help" class="hidden">
     <div class="panel help-card">
@@ -223,14 +261,14 @@
               <li>Üstteki araç çubuğundan kalemi seç (ya da <kbd>2</kbd> tuşuna bas) ve tahtaya çiz.</li>
               <li>Yanlış yaptıysan <kbd>Ctrl+Z</kbd> ile geri al, <kbd>Ctrl+Y</kbd> ile yinele.</li>
               <li>Çizdiğin bir şeyi taşımak için <kbd>1</kbd> ile Seç aracına geç, üstüne tıkla ve sürükle.</li>
-              <li>Renk ve kalınlığı sağdaki <b>özellik panelinden</b> değiştir (aşağıya bak).</li>
+              <li>Renk ve kalınlığı araç çubuğunun altındaki <b>özellik panelinden</b> değiştir (aşağıya bak).</li>
             </ol>
 
             <h3>Ekranın düzeni</h3>
             <ul>
               <li><b>Üst orta – araç çubuğu:</b> kalemler, silgi, cetvel, şekiller, metin/not, ekleme araçları, geri al / yinele.</li>
               <li><b>Sol üst:</b> menü düğmesi (☰), <b>Tahtalarım</b> galerisi ve kaydetme durumu.</li>
-              <li><b>Sağ – özellik paneli:</b> seçili araca ya da seçili nesnelere göre değişir; renk, kalınlık, dolgu, yazı boyutu, fırça türü gibi ayarlar burada.</li>
+              <li><b>Araç çubuğunun altı – özellik paneli:</b> seçili araca ya da seçili nesnelere göre değişir; renk, kalınlık, dolgu, yazı boyutu, fırça türü gibi ayarlar burada. Alt kenarındaki okla gizlenir.</li>
               <li><b>Sağ alt:</b> uzaklaştır / yakınlaştır, yüzdeye tıklayınca %100'e dönüş, "tümünü sığdır" düğmesi.</li>
             </ul>
 
@@ -265,6 +303,7 @@
               <li><b>Dolma kalem</b> – hafifçe değişen kalınlıkta mürekkep.</li>
               <li><b>Kesikli</b> – kesik kesik çizgi.</li>
               <li><b>Oklu</b> – çizginin sonuna ok ucu ekler.</li>
+              <li><b>Kesikli ok</b> – kesik kesik çizgi çizer, sonuna ok ucu ekler.</li>
               <li><b>Gökkuşağı</b> ve <b>Galaksi</b> – kendi renkleri vardır, renk seçimi uygulanmaz.</li>
               <li><b>Bant</b> – desenli yapışkan bant (washi).</li>
             </ul>
@@ -332,7 +371,11 @@
             </ul>
 
             <h3>Özellik paneli</h3>
-            <p>Sağdaki panel o an ne yaptığına göre değişir: kalem seçiliyken fırça, renk ve kalınlık; şekil seçiliyken dolgu; metin seçiliyken yazı boyutu; not seçiliyken not rengi; silgi seçiliyken silgi ayarları görünür. Bir nesne seçiliyse yaptığın değişiklik <b>o nesneye</b>, seçili nesne yoksa <b>sonraki çizimlerine</b> uygulanır.</p>
+            <p>Araç çubuğunun altındaki panel o an ne yaptığına göre değişir: kalem seçiliyken fırça, renk ve kalınlık; şekil seçiliyken dolgu; metin seçiliyken yazı boyutu; not seçiliyken not rengi; silgi seçiliyken silgi ayarları görünür. Bir nesne seçiliyse yaptığın değişiklik <b>o nesneye</b>, seçili nesne yoksa <b>sonraki çizimlerine</b> uygulanır.</p>
+            <ul>
+              <li>Panelin alt kenarındaki <b>ok</b> paneli gizler. Gizliyken ok araç çubuğunun hemen altında kalır (yanındaki nokta seçili rengi gösterir); tıklayınca panel geri açılır.</li>
+              <li>Okun yanındaki <b>raptiye</b> açıkken (varsayılan) panel yalnızca okla açılıp kapanır ve gizli bırakırsan başka araca geçince de gizli kalır. Raptiye kapalıyken panel tahtaya çizmeye başlayınca kendiliğinden gizlenir, araç değiştirince ya da bir nesne seçince yeniden açılır.</li>
+            </ul>
 
             <h3>Geri al / yinele</h3>
             <p><kbd>Ctrl+Z</kbd> ve <kbd>Ctrl+Y</kbd> (ya da <kbd>Ctrl+Shift+Z</kbd>). Her çizim, taşıma, silme ve ayar değişikliği ayrı bir adımdır. Araç çubuğunun sağındaki oklar da aynı işi yapar.</p>
@@ -369,7 +412,8 @@
             <p>Eklenen resim tahta dosyasının içine gömülür; orijinal dosyayı silsen bile tahtada kalır. Çok büyük resimler tahta dosyasını da büyütür.</p>
 
             <h3>PDF ekleme</h3>
-            <p>PDF'i resim düğmesinden seç ya da pencereye sürükle. <b>Her sayfa tahtaya ayrı bir resim olarak</b> alt alta eklenir; üzerine kalemle not alabilirsin. 30 sayfadan uzun PDF'lerde hepsinin eklenmesi istenip istenmediği sorulur ve biraz sürebilir.</p>
+            <p>PDF'i resim düğmesinden seç ya da pencereye sürükle. <b>Her sayfa tahtaya ayrı bir resim olarak</b> alt alta eklenir; üzerine kalemle not alabilirsin.</p>
+            <p>Birden çok sayfalı PDF'lerde hangi sayfaların ekleneceği sorulur: <b>Tüm sayfalar</b>, <b>Sayfalar</b> kutusuna <code>1-5, 8, 11-13</code> gibi bir liste (<code>11-</code> 11. sayfadan sona kadar demek) ya da <b>bir sayfadan başlayarak belirli sayıda sayfa</b> (ör. 12. sayfadan başlayarak 4 sayfa → 12-15). Çok sayfa eklemek biraz sürebilir.</p>
 
             <h3>Obsidian'dan ekle <kbd>B</kbd></h3>
             <p>Obsidian vault'undaki bir notu (ya da notun bir bölümünü) tahtaya, <b>Obsidian'daki görünümüne yakın</b> bir resim olarak koyar. Formüller (KaTeX), callout kutuları, [[bağlantılar]], görseller, işaretlemeler ve görev listeleri desteklenir.</p>
@@ -415,7 +459,8 @@
             <h3>Dosya işlemleri</h3>
             <ul>
               <li><b>Aç…</b> (<kbd>Ctrl+O</kbd>): vault dışındaki bir .tahta dosyasını açar; vault değişmez.</li>
-              <li><b>Kaydet</b> (<kbd>Ctrl+S</kbd>): zaten otomatik kaydeder, bu sadece anında kaydettirir.</li>
+              <li><b>Kaydet</b> (<kbd>Ctrl+S</kbd>): tahtayı hemen kaydeder.</li>
+              <li><b>Otomatik kaydet</b> (menüdeki onay kutusu): açıkken her değişiklik kendiliğinden kaydedilir. Kapalıyken yalnızca <kbd>Ctrl+S</kbd> ile kaydedilir; sol üstte "Kaydedilmedi" yazar ve başka tahtaya geçerken ya da pencereyi kapatırken kaydetmek isteyip istemediğin sorulur.</li>
               <li><b>Farklı kaydet…</b> (<kbd>Ctrl+Shift+S</kbd>): tahtanın bir kopyasını istediğin yere yazar.</li>
               <li><b>Dosya konumunu göster</b>: açık tahtanın dosyasını Gezgin'de gösterir.</li>
               <li>Gezgin'de bir .tahta dosyasına çift tıklayınca da Beyaz Tahta'da açılır.</li>
@@ -455,7 +500,8 @@
           </section>
 
           <section data-help-section="keys">
-            <p class="muted">Bu liste araç tanımlarından otomatik üretilir, her zaman günceldir.</p>
+            <p class="muted">Bu liste araç tanımlarından otomatik üretilir, her zaman günceldir. Araç kısayolunu değiştirmek için tuşun üstüne tıkla, sonra yeni tuşa bas (<kbd>Esc</kbd> vazgeçer).</p>
+            <p><button id="helpResetKeys" class="keyreset">Varsayılan ayarlara dön</button></p>
             <h3>Araçlar</h3>
             <table id="helpToolKeys"></table>
             <h3>Genel</h3>

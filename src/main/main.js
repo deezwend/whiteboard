@@ -295,6 +295,21 @@ ipcMain.on('board:saveSync', (e, json) => {
   }
 });
 
+// Otomatik kaydetme kapalıyken kaydedilmemiş değişiklik için sorulur: 'save' | 'discard' | 'cancel'.
+// Senkron, çünkü pencere kapanırken (beforeunload) de kullanılır.
+ipcMain.on('board:askUnsaved', (e) => {
+  const r = dialog.showMessageBoxSync(win, {
+    type: 'question',
+    buttons: ['Kaydet', 'Kaydetme', 'Vazgeç'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+    title: 'Kaydedilmemiş değişiklikler',
+    message: 'Tahtada kaydedilmemiş değişiklikler var. Kaydedilsin mi?',
+  });
+  e.returnValue = ['save', 'discard', 'cancel'][r] || 'cancel';
+});
+
 ipcMain.handle('board:saveAs', async (_e, json) => {
   const res = await dialog.showSaveDialog(win, {
     title: 'Tahtayı farklı kaydet',

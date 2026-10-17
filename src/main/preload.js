@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   loadInitial: () => ipcRenderer.invoke('board:loadInitial'),
   save: (json) => ipcRenderer.invoke('board:save', json),
   saveSync: (json) => ipcRenderer.sendSync('board:saveSync', json),
+  askUnsaved: () => ipcRenderer.sendSync('board:askUnsaved'),
   saveAs: (json) => ipcRenderer.invoke('board:saveAs', json),
   open: () => ipcRenderer.invoke('board:open'),
   newBoard: () => ipcRenderer.invoke('board:new'),

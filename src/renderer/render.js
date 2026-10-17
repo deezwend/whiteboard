@@ -326,9 +326,9 @@ function drawStroke(ctx, el) {
   } else if (brush === 'galaxy') {
     drawSegments(ctx, el, (i, d) => { ctx.strokeStyle = galaxyColor(d); });
     drawGalaxyStars(ctx, el);
-  } else if (brush === 'tape' || brush === 'dashed' || !el.pressure || el.highlighter) {
+  } else if (brush === 'tape' || brush === 'dashed' || brush === 'dashedarrow' || !el.pressure || el.highlighter) {
     ctx.lineWidth = el.width;
-    if (brush === 'dashed') ctx.setLineDash([el.width * 1.5, el.width * 2.5]);
+    if (brush === 'dashed' || brush === 'dashedarrow') ctx.setLineDash([el.width * 1.5, el.width * 2.5]);
     ctx.beginPath();
     tracePath(ctx, pts);
     ctx.stroke();
@@ -341,7 +341,7 @@ function drawStroke(ctx, el) {
     // Kalem baskısına göre değişken kalınlık: her parça ayrı kalınlıkta çizilir.
     drawSegments(ctx, el, () => {});
   }
-  if (brush === 'arrow') drawStrokeArrowHead(ctx, el);
+  if (brush === 'arrow' || brush === 'dashedarrow') drawStrokeArrowHead(ctx, el);
   ctx.globalAlpha = baseAlpha;
 }
 

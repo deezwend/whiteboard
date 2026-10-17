@@ -42,7 +42,7 @@ export function bbox(el) {
       }
       // Oklu fırçanın ucu ve kaligrafik fırçaların kalın yerleri çizginin dışına taşar.
       const r = (el.width / 2) * (BRUSH_WIDTH[el.brush] || 1) * (el.pressure && BRUSH_WIDTH[el.brush] ? 1.45 : 1)
-        + (el.brush === 'arrow' ? arrowHeadSize(el) : 0);
+        + (el.brush === 'arrow' || el.brush === 'dashedarrow' ?arrowHeadSize(el) : 0);
       return { x: minX - r, y: minY - r, w: maxX - minX + 2 * r, h: maxY - minY + 2 * r };
     }
     case 'line':

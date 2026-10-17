@@ -46,6 +46,8 @@ const BRUSHES = [
     icon: `<path d="${BRUSH_WAVE}" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 3.5"/>` },
   { id: 'arrow', label: 'Oklu', title: 'Çizginin sonuna ok ucu ekler',
     icon: '<path d="M3 12c4-7 8-7 12-2s8 5 13-4M22.5 5.5L28 6l-1 5.5" stroke="currentColor" stroke-width="2.5"/>' },
+  { id: 'dashedarrow', label: 'Kesikli ok', title: 'Kesik kesik çizgi, sonunda ok ucu',
+    icon: '<path d="M3 12c4-7 8-7 12-2s8 5 13-4" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 3.5"/><path d="M22.5 5.5L28 6l-1 5.5" stroke="currentColor" stroke-width="2.5"/>' },
   { id: 'rainbow', label: 'Gökkuşağı', title: 'Çizdikçe renk değiştirir', noColor: true,
     icon: `<defs><linearGradient id="brushRainbow"><stop offset="0" stop-color="#f03e3e"/><stop offset=".25" stop-color="#fab005"/><stop offset=".5" stop-color="#40c057"/><stop offset=".75" stop-color="#228be6"/><stop offset="1" stop-color="#be4bdb"/></linearGradient></defs>
       <path d="${BRUSH_WAVE}" stroke="url(#brushRainbow)" stroke-width="3.5"/>` },
@@ -87,8 +89,38 @@ const SHORTCUTS = [
 ];
 // 'ruler', 'image' ve 'obsidian' birer araç değil eylemdir; kısayol da bunları runAction'a yönlendirir.
 const ACTION_TARGETS = ['ruler', 'image', 'obsidian'];
+const DEFAULT_SHORTCUTS = SHORTCUTS.map((s) => ({ ...s }));
+const SLOTS = ['num', 'key', 'alt'];
+// Kullanıcının değiştirdiği kısayollar (localStorage 'shortcuts': { hedef: { key, num, alt } }).
+function loadShortcuts() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('shortcuts') || '{}'); } catch { /* isteğe bağlı */ }
+  for (const s of SHORTCUTS) {
+    const d = DEFAULT_SHORTCUTS.find((x) => x.target === s.target);
+    for (const slot of SLOTS) {
+      const v = saved[s.target]?.[slot];
+      if (d[slot] && typeof v === 'string' && v.length === 1) s[slot] = v;
+    }
+  }
+}
+function saveShortcuts() {
+  const out = {};
+  for (const s of SHORTCUTS) {
+    const d = DEFAULT_SHORTCUTS.find((x) => x.target === s.target);
+    for (const slot of SLOTS) if (s[slot] !== d[slot]) (out[s.target] ||= {})[slot] = s[slot];
+  }
+  try {
+    if (Object.keys(out).length) localStorage.setItem('shortcuts', JSON.stringify(out));
+    else localStorage.removeItem('shortcuts');
+  } catch { /* yoksay */ }
+}
 const KEYMAP = new Map();
-for (const s of SHORTCUTS) for (const k of [s.key, s.num, s.alt]) if (k) KEYMAP.set(k, s.target);
+function rebuildKeymap() {
+  KEYMAP.clear();
+  for (const s of SHORTCUTS) for (const k of [s.key, s.num, s.alt]) if (k) KEYMAP.set(k, s.target);
+}
+loadShortcuts();
+rebuildKeymap();
 
 // ---------- Durum ----------
 
@@ -104,6 +136,11 @@ const styles = {
 let tool = 'pen';
 // Her araç grubunda en son kullanılan araç (grup adı -> araç), düğmede o gösterilir.
 let groupPick = {};
+// Özellik paneli: collapsed = alt sekmeyle gizlendi; pinned = çizerken kendiliğinden gizlenmez.
+const propsUi = { collapsed: false, pinned: true };
+let propsKey = null; // panelin en son gösterdiği bağlam (araç adı, 'select' ya da 'edit')
+// Kapalıyken değişiklikler yalnızca Ctrl+S ile kaydedilir.
+let autoSave = true;
 loadPrefs();
 
 function emptyBoard() {
@@ -134,12 +171,14 @@ function loadPrefs() {
     for (const k of Object.keys(styles)) Object.assign(styles[k], p.styles?.[k] || {});
     if (p.tool) tool = p.tool;
     if (p.groups) groupPick = p.groups;
+    if (p.props) Object.assign(propsUi, p.props);
+    if (typeof p.autoSave === 'boolean') autoSave = p.autoSave;
   } catch { /* tercihler isteğe bağlı */ }
 }
 
 function savePrefs() {
   try {
-    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick }));
+    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick, props: propsUi, autoSave }));
   } catch { /* yoksay */ }
 }
 
@@ -237,9 +276,37 @@ function setSaveState(text) {
 
 function scheduleSave() {
   dirty = true;
-  setSaveState('Kaydediliyor…');
   clearTimeout(saveTimer);
+  if (!autoSave) return setSaveState('Kaydedilmedi');
+  setSaveState('Kaydediliyor…');
   saveTimer = setTimeout(saveNow, 700);
+}
+
+function setAutoSave(v) {
+  autoSave = v;
+  savePrefs();
+  updateAutoSaveUI();
+  if (dirty) scheduleSave(); // açılınca bekleyen değişiklikler hemen kaydedilir
+  toast(v ? 'Otomatik kaydetme açık' : 'Otomatik kaydetme kapalı — Ctrl+S ile kaydet');
+}
+
+function updateAutoSaveUI() {
+  $('#autoSaveToggle').setAttribute('aria-checked', String(autoSave));
+}
+
+// Başka tahtaya/vault'a geçmeden önce çağrılır; false dönerse geçiş iptal edilir.
+// Otomatik kaydetme kapalıyken kaydedilmemiş değişiklik için kullanıcıya sorulur.
+async function leaveBoard() {
+  if (autoSave || !dirty) {
+    await saveNow();
+    return true;
+  }
+  const choice = api.askUnsaved();
+  if (choice === 'cancel') return false;
+  // 'discard': dirty kalır; yeni tahta yüklenince sıfırlanır, geçiş (ör. Aç penceresi) iptal edilirse değişiklikler hâlâ kaydedilmemiş görünür.
+  if (choice === 'discard') return true;
+  await saveNow();
+  return !dirty; // kaydedilemediyse geçme
 }
 
 async function saveNow() {
@@ -256,9 +323,19 @@ async function saveNow() {
   }
 }
 
-window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', (e) => {
   commitEditor();
-  if (dirty) api.saveSync(serialize());
+  if (!dirty) return;
+  if (!autoSave) {
+    const choice = api.askUnsaved();
+    if (choice === 'discard') return;
+    if (choice === 'cancel') {
+      e.preventDefault();
+      e.returnValue = false; // pencere kapanmaz
+      return;
+    }
+  }
+  api.saveSync(serialize());
 });
 
 function changed(save = true) {
@@ -282,7 +359,7 @@ function loadBoard(data) {
   updateBgUI();
   changed(false);
   // Küçük resmi olmayan (eski) tahtalar galeride görünsün diye bir kez yeniden kaydedilir.
-  if (data && !data.thumb && board.elements.length) scheduleSave();
+  if (autoSave && data && !data.thumb && board.elements.length) scheduleSave();
 }
 
 // ---------- Çizim döngüsü ----------
@@ -587,6 +664,7 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if (penEraser || t === 'eraser') {
     drag = { kind: 'erase', last: w, checkpointed: false };
+    autoHideProps();
     eraseAlong(w, w);
     return;
   }
@@ -600,6 +678,7 @@ canvas.addEventListener('pointerdown', (e) => {
       };
       tempStrokes.push({ el, fadeStart: null });
       drag = { kind: 'draw', el, temp: true, straight: false, anchor: 0 };
+      autoHideProps();
       attachRuler(e);
       updateDraw(e, []);
       break;
@@ -621,6 +700,7 @@ canvas.addEventListener('pointerdown', (e) => {
       if (t === 'pen' && st.brush !== 'normal') el.brush = st.brush;
       board.elements.push(el);
       drag = { kind: 'draw', el, straight: false, anchor: 0 };
+      autoHideProps();
       sceneCacheValid = false;
       attachRuler(e);
       updateDraw(e, []);
@@ -638,6 +718,7 @@ canvas.addEventListener('pointerdown', (e) => {
         : { id: newId(), type: t, x: w.x, y: w.y, w: 0, h: 0, color: st.color, width: st.width, fill: st.fill };
       board.elements.push(el);
       drag = { kind: 'shape', el, start: w };
+      autoHideProps();
       sceneCacheValid = false;
       break;
     }
@@ -1260,10 +1341,30 @@ function updateProps() {
   const c = propsContext();
   if (!c) {
     panel.classList.add('hidden');
+    propsKey = null;
     return;
   }
   panel.classList.remove('hidden');
   const v = c.values || {};
+
+  // Raptiye kapalıyken panel; araç, seçim ya da düzenleme durumu değişince yeniden açılır.
+  const key = editing ? 'edit' : selectionIsEditable() ? 'select' : activeTool();
+  if (key !== propsKey) {
+    propsKey = key;
+    if (!propsUi.pinned) propsUi.collapsed = false;
+  }
+  panel.classList.toggle('collapsed', propsUi.collapsed);
+  const toggle = $('#propsToggle');
+  toggle.title = propsUi.collapsed ? 'Paneli göster' : 'Paneli gizle';
+  const dotColor = c.colors ? v.color : c.noteColors ? v.noteColor : null;
+  const dot = toggle.querySelector('.tab-dot');
+  dot.classList.toggle('hidden', !propsUi.collapsed || !dotColor);
+  if (dotColor) dot.style.background = dotColor;
+  const pin = $('#propsPin');
+  pin.classList.toggle('on', propsUi.pinned);
+  pin.title = propsUi.pinned
+    ? 'Sabit: panel yalnızca okla gizlenir (kapatınca çizerken kendiliğinden gizlenir)'
+    : 'Sabit değil: çizmeye başlayınca panel gizlenir (tıkla, sabitle)';
 
   const brushRow = $('#brushRow');
   brushRow.classList.toggle('hidden', !c.brushes);
@@ -1378,6 +1479,13 @@ $('#props').addEventListener('click', (e) => {
   else if (b.dataset.fill) applyStyle('fill', b.dataset.fill);
   else if (b.dataset.brush) applyStyle('brush', b.dataset.brush);
   else if (b.dataset.arrange) arrange(b.dataset.arrange);
+  else if ('propsToggle' in b.dataset) setPropsCollapsed(!propsUi.collapsed);
+  else if ('propsPin' in b.dataset) {
+    propsUi.pinned = !propsUi.pinned;
+    savePrefs();
+    updateProps();
+    toast(propsUi.pinned ? 'Panel sabitlendi' : 'Panel çizerken kendiliğinden gizlenecek');
+  }
   else if (b.dataset.obsidian === 'refresh') refreshObsidian(selectedEls());
   else if (b.dataset.obsidian === 'open') openInObsidian(selectedEls()[0]);
   else if (b.dataset.eraserMode) {
@@ -1404,6 +1512,18 @@ $('#props').addEventListener('change', (e) => {
 $('#props').addEventListener('mousedown', (e) => {
   if (editing && e.target.type !== 'color') e.preventDefault();
 });
+
+function setPropsCollapsed(v) {
+  if (propsUi.collapsed === v) return;
+  propsUi.collapsed = v;
+  savePrefs();
+  updateProps();
+}
+
+// Raptiye kapalıyken tahtaya çizmeye başlamak paneli gizler.
+function autoHideProps() {
+  if (!propsUi.pinned) setPropsCollapsed(true);
+}
 
 function arrange(action) {
   const sel = selectedEls();
@@ -1478,15 +1598,21 @@ $('#toolbar').addEventListener('click', (e) => {
 
 // Her düğmenin köşesine kısayol rozetini yazar, ipucuna da tuşu ekler: araçlar hem tek tuşla
 // hem de düğmede yazan tuşla kolayca seçilebilir.
-for (const b of document.querySelectorAll('#toolbar button')) {
-  const sc = SHORTCUTS.find((s) => s.target === (b.dataset.tool || b.dataset.action));
-  if (!sc) continue;
-  const kbd = document.createElement('kbd');
-  kbd.className = 'key';
-  kbd.textContent = sc.key.toUpperCase();
-  b.appendChild(kbd);
-  b.title = b.title + ' (' + sc.key.toUpperCase() + ')';
+const baseTitles = new Map();
+function applyToolbarBadges() {
+  for (const b of document.querySelectorAll('#toolbar button:not(.gmain)')) {
+    const sc = SHORTCUTS.find((s) => s.target === (b.dataset.tool || b.dataset.action));
+    if (!sc) continue;
+    if (!baseTitles.has(b)) baseTitles.set(b, b.title);
+    b.querySelector('kbd.key')?.remove();
+    const kbd = document.createElement('kbd');
+    kbd.className = 'key';
+    kbd.textContent = sc.key.toUpperCase();
+    b.appendChild(kbd);
+    b.title = baseTitles.get(b) + ' (' + sc.key.toUpperCase() + ')';
+  }
 }
+applyToolbarBadges();
 
 // ---------- Araç grupları ----------
 // Benzer araçlar (kalemler, şekiller, metin/not, ekleme) araç çubuğunda tek düğmede toplanır.
@@ -1620,6 +1746,8 @@ $('#menu').addEventListener('click', (e) => {
   if (b.dataset.cmd) {
     hideMenu();
     handleCommand(b.dataset.cmd);
+  } else if ('autosave' in b.dataset) {
+    setAutoSave(!autoSave);
   } else if (b.dataset.bg) {
     board.background = b.dataset.bg;
     updateBgUI();
@@ -1673,7 +1801,7 @@ async function handleCommand(cmd) {
   commitEditor();
   switch (cmd) {
     case 'new':
-      await saveNow();
+      if (!(await leaveBoard())) return;
       await api.newBoard();
       loadBoard(emptyBoard());
       zoomFit();
@@ -1681,7 +1809,7 @@ async function handleCommand(cmd) {
       toast('Yeni tahta oluşturuldu');
       break;
     case 'open': {
-      await saveNow();
+      if (!(await leaveBoard())) return;
       const res = await api.open();
       if (res) {
         loadBoard(res.data);
@@ -1706,7 +1834,7 @@ async function handleCommand(cmd) {
     case 'exportPng':
       return exportPng();
     case 'showFolder':
-      await saveNow();
+      if (autoSave) await saveNow();
       return api.showFolder();
     case 'gallery':
       return galleryOpen() ? closeGallery() : openGallery();
@@ -1734,7 +1862,7 @@ async function handleCommand(cmd) {
 api.onMenu(handleCommand);
 api.onOpenPath(async (p) => {
   commitEditor();
-  await saveNow();
+  if (!(await leaveBoard())) return;
   const res = await api.openPath(p);
   if (res) {
     loadBoard(res.data);
@@ -1790,15 +1918,80 @@ const GENERAL_KEYS = [
 
 const kbd = (k) => `<kbd>${k}</kbd>`;
 
+// Düzenlenen kısayol yuvası: { target, slot } ya da null.
+let capturing = null;
+
 function buildHelpKeys() {
   $('#helpToolKeys').innerHTML = SHORTCUTS.map((s) => {
-    const keys = [s.num, s.key, s.alt].filter(Boolean).map((k) => kbd(k.toUpperCase())).join(' ');
+    const keys = SLOTS.filter((slot) => s[slot]).map((slot) => {
+      const on = capturing && capturing.target === s.target && capturing.slot === slot;
+      return `<button class="keychip${on ? ' capturing' : ''}" data-target="${s.target}" data-slot="${slot}" ` +
+        `title="Değiştirmek için tıkla">${on ? 'Tuşa bas…' : s[slot].toUpperCase()}</button>`;
+    }).join(' ');
     return `<tr><td>${keys}</td><td>${TOOL_LABELS[s.target] || s.target}</td></tr>`;
   }).join('');
   $('#helpGeneralKeys').innerHTML = GENERAL_KEYS.map(([keys, label]) =>
     `<tr><td>${keys.map(kbd).join(' ')}</td><td>${label}</td></tr>`).join('');
 }
 buildHelpKeys();
+
+function refreshShortcutUi() {
+  rebuildKeymap();
+  saveShortcuts();
+  applyToolbarBadges();
+  for (const grp of toolGroups) showInGroup(grp, groupPick[grp.name]);
+  buildHelpKeys();
+}
+
+// Yeni tuş başka bir yuvada kullanılıyorsa iki yuvanın tuşları yer değiştirir.
+function assignShortcut(target, slot, newKey) {
+  const s = SHORTCUTS.find((x) => x.target === target);
+  const old = s[slot];
+  if (newKey === old) return;
+  for (const o of SHORTCUTS) {
+    for (const sl of SLOTS) {
+      if (o[sl] === newKey) {
+        o[sl] = old;
+        toast(`"${newKey.toUpperCase()}" tuşu "${TOOL_LABELS[o.target]}" aracındaydı; tuşlar yer değiştirdi`);
+      }
+    }
+  }
+  s[slot] = newKey;
+  refreshShortcutUi();
+}
+
+$('#helpToolKeys').addEventListener('click', (e) => {
+  const b = e.target.closest('.keychip');
+  if (!b) return;
+  capturing = { target: b.dataset.target, slot: b.dataset.slot };
+  buildHelpKeys();
+});
+
+// Yakalama sırasında basılan tuşu kısayol yapar (yakalama evresinde, genel işleyiciden önce).
+window.addEventListener('keydown', (e) => {
+  if (!capturing) return;
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const { target, slot } = capturing;
+  capturing = null;
+  const k = e.key.toLowerCase();
+  if (e.key === 'Escape') { /* vazgeç */ }
+  else if (e.ctrlKey || e.metaKey || e.altKey || k.length !== 1 || [' ', '[', ']'].includes(k)) {
+    toast('Bu tuş kısayol olarak kullanılamaz; tek bir harf, rakam ya da simge seç');
+  } else {
+    assignShortcut(target, slot, k);
+    return;
+  }
+  buildHelpKeys();
+}, true);
+
+$('#helpResetKeys').addEventListener('click', () => {
+  capturing = null;
+  for (const s of SHORTCUTS) Object.assign(s, DEFAULT_SHORTCUTS.find((x) => x.target === s.target));
+  refreshShortcutUi();
+  toast('Kısayollar varsayılana döndürüldü');
+});
 
 function showHelpTab(name) {
   helpTabs.forEach((b) => b.classList.toggle('active', b.dataset.helpTab === name));
@@ -1876,14 +2069,14 @@ function obsidianPickerOpen() {
   return !!document.getElementById('obsidianPicker');
 }
 
-// Galeri ya da Obsidian seçicisi açıkken pano ve sürükle-bırak tahtaya işlemez.
+// Galeri, Obsidian seçicisi ya da PDF sayfa penceresi açıkken pano ve sürükle-bırak tahtaya işlemez.
 function overlayOpen() {
-  return galleryOpen() || obsidianPickerOpen();
+  return galleryOpen() || obsidianPickerOpen() || pdfDialogOpen();
 }
 
 async function openGallery() {
   hideMenu();
-  await saveNow(); // açık tahtanın küçük resmi güncel olsun
+  if (autoSave) await saveNow(); // açık tahtanın küçük resmi güncel olsun
   gallerySearch.value = '';
   gallery.classList.remove('hidden');
   await refreshGallery();
@@ -1989,7 +2182,7 @@ function renderGallery() {
 
 async function openFromGallery(p) {
   if (p === galleryData.current) return closeGallery();
-  await saveNow();
+  if (!(await leaveBoard())) return;
   const res = await api.openPath(p);
   if (!res) return refreshGallery();
   loadBoard(res.data);
@@ -2011,7 +2204,7 @@ function startRename(card) {
     done = true;
     const name = input.value.trim();
     if (commit && name && name !== oldName) {
-      await saveNow();
+      if (autoSave) await saveNow();
       const res = await api.renameBoard(card.dataset.path, name);
       if (res.error) toast(res.error);
     }
@@ -2028,7 +2221,7 @@ function startRename(card) {
 async function deleteFromGallery(card) {
   const name = card.querySelector('.gname')?.textContent || '';
   if (!confirm(`"${name}" silinsin mi?`)) return;
-  await saveNow();
+  if (autoSave) await saveNow();
   const res = await api.deleteBoard(card.dataset.path);
   if (res.deleted && res.wasCurrent) {
     loadBoard(emptyBoard());
@@ -2049,18 +2242,18 @@ function vaultOpened(res, message = 'Vault açıldı') {
 }
 
 async function openVault() {
-  await saveNow();
+  if (!(await leaveBoard())) return;
   vaultOpened(await api.openVault());
 }
 
 async function createVault() {
-  await saveNow();
+  if (!(await leaveBoard())) return;
   vaultOpened(await api.createVault(), 'Yeni vault oluşturuldu');
 }
 
 async function switchVault(dir) {
   if (dir === galleryData.dir) return;
-  await saveNow();
+  if (!(await leaveBoard())) return;
   vaultOpened(await api.switchVault(dir));
 }
 
@@ -2172,7 +2365,131 @@ async function loadPdfJs() {
   return pdfjs;
 }
 
-// PDF'in her sayfasını resme çevirip alt alta yerleştirir.
+// "1-5, 8, 11-" gibi bir yazıyı sıralı, tekrarsız sayfa numaralarına çevirir.
+// "11-" sona kadar demektir. Geçersizse hata metni döner.
+function parsePageRanges(text, max) {
+  const pages = new Set();
+  const parts = text.split(/[,;\s]+/).filter(Boolean);
+  if (!parts.length) return { error: 'Sayfa numarası yaz' };
+  for (const part of parts) {
+    const m = /^(\d+)?(?:\s*[-–]\s*(\d+)?)?$/.exec(part);
+    if (!m || (!m[1] && !m[2])) return { error: `Anlaşılmadı: "${part}"` };
+    const isRange = part.includes('-') || part.includes('–');
+    const a = m[1] ? +m[1] : 1;
+    const b = isRange ? (m[2] ? +m[2] : max) : a;
+    if (a < 1 || b < 1 || a > max || b > max) return { error: `PDF ${max} sayfa; "${part}" dışarıda kalıyor` };
+    for (let n = Math.min(a, b); n <= Math.max(a, b); n++) pages.add(n);
+  }
+  return { pages: [...pages].sort((x, y) => x - y) };
+}
+
+const pdfDialog = $('#pdfPages');
+const pdfDialogOpen = () => !pdfDialog.classList.contains('hidden');
+
+// Hangi sayfaların ekleneceğini sorar; sayfa numaraları dizisi ya da (vazgeçilirse) null döner.
+function askPdfPages(name, count) {
+  const form = $('#pdfForm');
+  const range = $('#pdfRange');
+  const from = $('#pdfFrom');
+  const take = $('#pdfTake');
+  const summary = $('#pdfSummary');
+  const ok = $('#pdfOk');
+  $('#pdfName').textContent = name;
+  $('#pdfCount').textContent = count;
+  from.max = count;
+  take.max = count;
+  from.value = 1;
+  take.value = Math.min(5, count);
+  range.value = '';
+  form.pdfMode.value = 'all';
+
+  const pick = () => {
+    const mode = form.pdfMode.value;
+    if (mode === 'all') return { pages: Array.from({ length: count }, (_, i) => i + 1) };
+    if (mode === 'range') return parsePageRanges(range.value, count);
+    const s = Math.floor(+from.value);
+    const n = Math.floor(+take.value);
+    if (!(s >= 1 && s <= count)) return { error: `Başlangıç 1 ile ${count} arasında olmalı`, field: from };
+    if (!(n >= 1)) return { error: 'Sayfa sayısı en az 1 olmalı', field: take };
+    const end = Math.min(count, s + n - 1);
+    return { pages: Array.from({ length: end - s + 1 }, (_, i) => s + i), clipped: s + n - 1 > count };
+  };
+  const update = () => {
+    const r = pick();
+    range.classList.toggle('invalid', form.pdfMode.value === 'range' && !!r.error && range.value.trim() !== '');
+    from.classList.toggle('invalid', r.field === from);
+    take.classList.toggle('invalid', r.field === take);
+    summary.classList.toggle('error', !!r.error && !(form.pdfMode.value === 'range' && !range.value.trim()));
+    ok.disabled = !!r.error;
+    if (r.error) summary.textContent = r.error;
+    else {
+      const p = r.pages;
+      const which = p.length === 1 ? `${p[0]}. sayfa` : `${p.length} sayfa (${describePages(p)})`;
+      summary.textContent = which + ' eklenecek' + (r.clipped ? ' — PDF burada bitiyor' : '') +
+        (p.length > 30 ? '. Biraz sürebilir.' : '');
+    }
+    return r;
+  };
+  // Bir kutuya yazmaya başlayınca ilgili seçenek kendiliğinden seçilsin.
+  const focusMode = (mode) => () => { form.pdfMode.value = mode; update(); };
+
+  return new Promise((resolve) => {
+    const finish = (pages) => {
+      pdfDialog.classList.add('hidden');
+      form.removeEventListener('input', update);
+      form.removeEventListener('submit', onSubmit);
+      pdfDialog.removeEventListener('keydown', onKey);
+      pdfDialog.removeEventListener('pointerdown', onBackdrop);
+      $('#pdfCancel').removeEventListener('click', onCancel);
+      range.removeEventListener('focus', onRangeFocus);
+      from.removeEventListener('focus', onFromFocus);
+      take.removeEventListener('focus', onFromFocus);
+      resolve(pages);
+    };
+    const onSubmit = (e) => {
+      e.preventDefault();
+      const r = update();
+      if (!r.error) finish(r.pages);
+    };
+    const onKey = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(null);
+      }
+    };
+    const onBackdrop = (e) => { if (e.target === pdfDialog) finish(null); };
+    const onCancel = () => finish(null);
+    const onRangeFocus = focusMode('range');
+    const onFromFocus = focusMode('from');
+    form.addEventListener('input', update);
+    form.addEventListener('submit', onSubmit);
+    pdfDialog.addEventListener('keydown', onKey);
+    pdfDialog.addEventListener('pointerdown', onBackdrop);
+    $('#pdfCancel').addEventListener('click', onCancel);
+    range.addEventListener('focus', onRangeFocus);
+    from.addEventListener('focus', onFromFocus);
+    take.addEventListener('focus', onFromFocus);
+    pdfDialog.classList.remove('hidden');
+    update();
+    ok.focus();
+  });
+}
+
+// [1,2,3,5,7,8] -> "1-3, 5, 7-8"
+function describePages(pages) {
+  const out = [];
+  for (let i = 0; i < pages.length; i++) {
+    let j = i;
+    while (j + 1 < pages.length && pages[j + 1] === pages[j] + 1) j++;
+    out.push(i === j ? `${pages[i]}` : `${pages[i]}-${pages[j]}`);
+    i = j;
+  }
+  const s = out.join(', ');
+  return s.length > 40 ? s.slice(0, 40) + '…' : s;
+}
+
+// PDF'in seçilen sayfalarını resme çevirip alt alta yerleştirir.
 async function insertPdf(file, at) {
   let doc;
   try {
@@ -2181,15 +2498,16 @@ async function insertPdf(file, at) {
   } catch {
     return toast('PDF açılamadı: ' + file.name);
   }
-  const count = doc.numPages;
-  if (count > 30 && !confirm(`Bu PDF ${count} sayfa. Hepsi eklensin mi? (Biraz sürebilir)`)) return;
+  const pages = doc.numPages > 1 ? await askPdfPages(file.name, doc.numPages) : [1];
+  if (!pages) return doc.destroy();
+  const count = pages.length;
 
   const z = board.view.zoom;
   const center = at || toWorld(innerWidth / 2, innerHeight / 2);
   const created = [];
   let y = null;
-  for (let n = 1; n <= count; n++) {
-    toast(`PDF ekleniyor… ${n}/${count}`);
+  for (const [i, n] of pages.entries()) {
+    toast(`PDF ekleniyor… ${i + 1}/${count}`);
     const page = await doc.getPage(n);
     const base = page.getViewport({ scale: 1 });
     const scale = Math.min(2.5, 2400 / Math.max(base.width, base.height));
@@ -2369,7 +2687,7 @@ document.addEventListener('paste', (e) => {
 let nudgeTime = 0;
 
 window.addEventListener('keydown', (e) => {
-  if (e.target === editor || obsidianPickerOpen()) return;
+  if (e.target === editor || obsidianPickerOpen() || pdfDialogOpen()) return;
   if (galleryOpen()) return galleryKeydown(e);
   // Rehber açıkken tuşlar tahtayı etkilemesin (arama kutusuna yazılan harf araç seçmesin).
   if (helpOpen()) {
@@ -2466,6 +2784,7 @@ async function init() {
   resize();
   setTool(tool);
   updateBgUI();
+  updateAutoSaveUI();
   const res = await api.loadInitial();
   if (res.data) loadBoard(res.data);
   else {

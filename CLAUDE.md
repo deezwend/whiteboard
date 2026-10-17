@@ -51,7 +51,7 @@ Elements are in world coordinates; `screen = world * view.zoom + view.{x,y}` (`t
 
 ### Rendering and saving
 
-`requestRender()` coalesces into one `requestAnimationFrame`. While drawing a stroke/shape, the rest of the scene is cached in an offscreen canvas (`sceneCache`); set `sceneCacheValid = false` whenever the view changes. `changed()` re-renders, refreshes the props panel and schedules a debounced autosave; view-only changes use `scheduleViewSave()` instead. On window close, pending changes are flushed synchronously via `api.saveSync`.
+`requestRender()` coalesces into one `requestAnimationFrame`. While drawing a stroke/shape, the rest of the scene is cached in an offscreen canvas (`sceneCache`); set `sceneCacheValid = false` whenever the view changes. `changed()` re-renders, refreshes the props panel and schedules a debounced autosave; view-only changes use `scheduleViewSave()` instead. On window close, pending changes are flushed synchronously via `api.saveSync`. The menu's "Otomatik kaydet" checkbox (`autoSave` in prefs, default on) turns autosave off: `scheduleSave` then only marks `dirty`, Ctrl+S saves, and every board/vault switch goes through `leaveBoard()`, which (like `beforeunload`) asks Kaydet / Kaydetme / Vazgeç via the synchronous `board:askUnsaved` dialog in main.
 
 ### Pointer handling
 
