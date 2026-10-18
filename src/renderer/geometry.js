@@ -52,9 +52,94 @@ export function bbox(el) {
       const y = Math.min(el.y1, el.y2) - r;
       return { x, y, w: Math.abs(el.x2 - el.x1) + 2 * r, h: Math.abs(el.y2 - el.y1) + 2 * r };
     }
-    default:
-      return normRect(el.x, el.y, el.w, el.h);
+    default: {
+      const b = normRect(el.x, el.y, el.w, el.h);
+      if (!el.rot) return b;
+      // Döndürülmüş kutu: dönmüş köşeleri kapsayan eksene paralel kutu.
+      const c = Math.abs(Math.cos(el.rot)), s = Math.abs(Math.sin(el.rot));
+      const w = b.w * c + b.h * s, h = b.w * s + b.h * c;
+      return { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - h / 2, w, h };
+    }
   }
+}
+
+// ---------- Döndürme ----------
+// Nokta listeli öğeler (çizgi, çokgen, doğru, ok) döndürülünce koordinatları doğrudan değişir.
+// Kutu öğeleri (dikdörtgen, elips, yazı, not, resim, bant) kutusunu korur ve merkezi etrafındaki
+// açıyı `rot` (radyan) alanında taşır. Koordinat sistemi döndürülmez.
+
+export function canRotate(el) {
+  return el.type !== 'axes';
+}
+
+export function rotatePoint(x, y, cx, cy, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  const dx = x - cx, dy = y - cy;
+  return [cx + dx * c - dy * s, cy + dx * s + dy * c];
+}
+
+export function boxCenter(el) {
+  const b = normRect(el.x, el.y, el.w, el.h);
+  return [b.x + b.w / 2, b.y + b.h / 2];
+}
+
+// Açıyı (-π, π] aralığına getirir; 0'a çok yakınsa 0 yapar ki düz öğe "döndürülmüş" sayılmasın.
+function normAngle(a) {
+  a = Math.atan2(Math.sin(a), Math.cos(a));
+  return Math.abs(a) < 1e-6 ? 0 : a;
+}
+
+// `orig` sürüklemenin başındaki kopyadır; öğe (cx, cy) etrafında `a` radyan döndürülür.
+export function rotateAround(el, orig, cx, cy, a) {
+  switch (el.type) {
+    case 'stroke':
+      el.points = orig.points.map(([x, y, p]) => [...rotatePoint(x, y, cx, cy, a), p]);
+      break;
+    case 'polygon':
+      el.points = orig.points.map(([x, y]) => rotatePoint(x, y, cx, cy, a));
+      break;
+    case 'line':
+    case 'arrow':
+      [el.x1, el.y1] = rotatePoint(orig.x1, orig.y1, cx, cy, a);
+      [el.x2, el.y2] = rotatePoint(orig.x2, orig.y2, cx, cy, a);
+      break;
+    case 'axes':
+      break;
+    default: {
+      const [ox, oy] = boxCenter(orig);
+      const [nx, ny] = rotatePoint(ox, oy, cx, cy, a);
+      el.x = orig.x + nx - ox;
+      el.y = orig.y + ny - oy;
+      const r = normAngle((orig.rot || 0) + a);
+      if (r) el.rot = r;
+      else delete el.rot;
+    }
+  }
+}
+
+// Kutu öğesinin boyutunu değiştirir. Dönmüşse, sol üst köşesi (yazının başladığı yer)
+// ekranda yerinde kalacak şekilde kutu kaydırılır.
+export function resizeBox(el, w, h) {
+  if (!el.rot) {
+    el.w = w;
+    el.h = h;
+    return;
+  }
+  const [cx, cy] = boxCenter(el);
+  const [px, py] = rotatePoint(el.x, el.y, cx, cy, el.rot);
+  const c = Math.cos(el.rot), s = Math.sin(el.rot);
+  const ncx = px + (w / 2) * c - (h / 2) * s;
+  const ncy = py + (w / 2) * s + (h / 2) * c;
+  el.x = ncx - w / 2;
+  el.y = ncy - h / 2;
+  el.w = w;
+  el.h = h;
+}
+
+// Dönmüş kutu öğesinin yerel (döndürülmemiş) koordinatına çevirir.
+function unrotate(el, x, y) {
+  const [cx, cy] = boxCenter(el);
+  return rotatePoint(x, y, cx, cy, -el.rot);
 }
 
 // Kaligrafik fırçaların en kalın yerinin, seçilen kalınlığa oranı.
@@ -87,6 +172,7 @@ export function rectContains(outer, inner) {
 }
 
 export function hitTest(el, x, y, tol) {
+  if (el.rot) [x, y] = unrotate(el, x, y);
   switch (el.type) {
     case 'stroke': {
       const r = el.width / 2 + tol;
@@ -160,7 +246,10 @@ function samplePoints(el) {
       return [[el.x1, el.y1], [(el.x1 + el.x2) / 2, (el.y1 + el.y2) / 2], [el.x2, el.y2]];
     default: {
       const b = normRect(el.x, el.y, el.w, el.h);
-      return [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h], [b.x + b.w / 2, b.y + b.h / 2]];
+      const pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h], [b.x + b.w / 2, b.y + b.h / 2]];
+      if (!el.rot) return pts;
+      const [cx, cy] = boxCenter(el);
+      return pts.map(([x, y]) => rotatePoint(x, y, cx, cy, el.rot));
     }
   }
 }
@@ -222,8 +311,12 @@ function densify(pts, step) {
 // Kısmi silgi: silginin geçtiği yerleri çıkarıp kalan parçaları ayrı çizgiler olarak döndürür.
 // Parçalanamayan öğeler için null döner.
 export function splitByEraser(el, samples, r) {
-  const poly = toPolyline(el);
+  let poly = toPolyline(el);
   if (!poly) return null;
+  if (el.rot) {
+    const [cx, cy] = boxCenter(el);
+    poly = poly.map(([x, y, p]) => [...rotatePoint(x, y, cx, cy, el.rot), p]);
+  }
   const pts = densify(poly, Math.max(r / 3, 0.5));
   const reach = r + el.width / 2;
   const parts = [];
@@ -241,7 +334,12 @@ export function splitByEraser(el, samples, r) {
   if (closed && parts.length > 1 && parts[0][0] === pts[0] && parts[parts.length - 1].at(-1) === pts[pts.length - 1]) {
     parts[0] = parts.pop().concat(parts[0].slice(1));
   }
-  return parts.map((points) => ({
+  return parts.map((points) => pieceOf(el, points));
+}
+
+// Parçalanan öğenin bir parçası: aynı görünüşte serbest çizgi.
+function pieceOf(el, points) {
+  return {
     id: newId(),
     type: 'stroke',
     points,
@@ -250,7 +348,62 @@ export function splitByEraser(el, samples, r) {
     highlighter: !!el.highlighter,
     pressure: !!el.pressure,
     ...(el.brush ? { brush: el.brush } : {}),
-  }));
+  };
+}
+
+// ab parçasının cd parçasını kestiği yer (ab üzerindeki 0..1 oranı) ya da null.
+function crossT(a, b, c, d) {
+  const rx = b[0] - a[0], ry = b[1] - a[1];
+  const sx = d[0] - c[0], sy = d[1] - c[1];
+  const den = rx * sy - ry * sx;
+  if (!den) return null;
+  const qx = c[0] - a[0], qy = c[1] - a[1];
+  const t = (qx * sy - qy * sx) / den;
+  const u = (qx * ry - qy * rx) / den;
+  return t > 0 && t < 1 && u >= 0 && u < 1 ? t : null;
+}
+
+// Makas: öğeyi kementin sınırından keser, içeride ve dışarıda kalan parçaları ayrı döndürür.
+// Kementi kesmeyen ya da parçalanamayan öğeler için null döner (öğe bütün olarak değerlendirilir).
+export function splitByLasso(el, lasso) {
+  // Oklu fırçada her parçaya ok ucu eklenirdi; bunlar bütün olarak seçilir.
+  if (el.brush === 'arrow' || el.brush === 'dashedarrow') return null;
+  let poly = toPolyline(el);
+  if (!poly || poly.length < 2) return null;
+  if (el.rot) {
+    const [cx, cy] = boxCenter(el);
+    poly = poly.map(([x, y, p]) => [...rotatePoint(x, y, cx, cy, el.rot), p]);
+  }
+  // Parçalar yumuşatılarak çizilen serbest çizgiye dönüşür; düz kenarlı şekillerin köşeleri
+  // yuvarlanmasın diye kenarlar sık noktalara bölünür.
+  if (el.type !== 'stroke') poly = densify(poly, Math.max(1, el.width / 2));
+  const edges = lasso.map((p, i) => [p, lasso[(i + 1) % lasso.length]]);
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (a[2] ?? 0.5) + ((b[2] ?? 0.5) - (a[2] ?? 0.5)) * t];
+  // Her parça kement sınırında kesilir; aradaki küçük parçaların ortası içeride mi dışarıda mı diye bakılır.
+  const runs = [];
+  let crossed = false;
+  for (let i = 1; i < poly.length; i++) {
+    const a = poly[i - 1], b = poly[i];
+    const ts = edges.map(([c, d]) => crossT(a, b, c, d)).filter((t) => t !== null).sort((x, y) => x - y);
+    if (ts.length) crossed = true;
+    const cuts = [a, ...ts.map((t) => lerp(a, b, t)), b];
+    for (let k = 1; k < cuts.length; k++) {
+      const p = cuts[k - 1], q = cuts[k];
+      const inside = pointInPolygon((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, lasso);
+      const run = runs[runs.length - 1];
+      if (run && run.inside === inside) run.points.push(q);
+      else runs.push({ inside, points: [p, q] });
+    }
+  }
+  if (!crossed) return null;
+  // Kapalı şekilde ilk ve son parça aynı taraftaysa aslında tek parçadır.
+  const closed = Math.hypot(poly[0][0] - poly[poly.length - 1][0], poly[0][1] - poly[poly.length - 1][1]) < 0.01;
+  if (closed && runs.length > 2 && runs[0].inside === runs[runs.length - 1].inside) {
+    runs[0].points = runs.pop().points.concat(runs[0].points.slice(1));
+  }
+  const out = { inside: [], outside: [] };
+  for (const r of runs) (r.inside ? out.inside : out.outside).push(pieceOf(el, r.points));
+  return out;
 }
 
 export function cloneEl(el) {

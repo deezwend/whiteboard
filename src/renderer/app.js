@@ -1,6 +1,6 @@
 import {
   newId, bbox, unionBBox, hitTest, cloneEl, translate, scaleFrom,
-  insideLasso, splitByEraser, NOTE_PADDING, rectsIntersect,
+  rotateAround, canRotate, resizeBox, insideLasso, splitByEraser, splitByLasso, NOTE_PADDING, rectsIntersect,
 } from './geometry.js';
 import {
   drawElement, drawBackground, measureText, wrappedHeight, setImageLoadCallback, revealedCovers, renderOpts, getImage,
@@ -22,6 +22,7 @@ const $ = (s) => document.querySelector(s);
 const INK_COLORS = ['#1f2328', '#868e96', '#e03131', '#f08c00', '#2f9e44', '#1971c2', '#7048e8', '#c2255c', '#ffffff'];
 const HIGHLIGHT_COLORS = ['#ffd400', '#7cf29b', '#7ad7ff', '#ff9ad5', '#ffb15c', '#c9a7ff'];
 const NOTE_COLORS = ['#fff3a3', '#ffd6e0', '#c9f2d0', '#cfe6ff', '#e5d9ff', '#ffe0b8'];
+const LASER_COLORS = ['#ff2d2d', '#ff8c1a', '#ffd400', '#2fe36b', '#2d9bff', '#c04dff', '#ff3dbb'];
 const COVER_COLORS = ['#4a7cf0', '#7048e8', '#e8590c', '#2f9e44', '#c2255c', '#495057'];
 // Koordinat sistemine eklenen fonksiyonların sırayla aldığı renkler.
 const FN_COLORS = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#7048e8', '#c2255c'];
@@ -39,7 +40,12 @@ const PEN_WIDTHS = [1.5, 3, 6, 10, 16];
 const HIGHLIGHT_WIDTHS = [10, 18, 28, 40];
 const SHAPE_WIDTHS = [1.5, 3, 6, 10];
 const TAPE_WIDTHS = [10, 18, 28, 40];
-// Kalem fırçaları: renk seçimi kullanmayanlar (gökkuşağı, galaksi) kendi renklerini üretir.
+// Galaksi fırçasının renk seçenekleri: 'classic' klasik uzay renkleridir (öğeye yazılmaz),
+// diğerleri öğenin galaxy alanına yazılır ve render.js o renkten bir palet türetir.
+const GALAXY_TINTS = ['classic', '#e03131', '#f08c00', '#2f9e44', '#0c8599', '#1971c2', '#7048e8', '#c2255c', '#1f2328'];
+const GALAXY_CLASSIC_BG = 'linear-gradient(135deg, #1b1f6b, #a23bd6 55%, #2f6fe0)';
+// Kalem fırçaları: renk seçimi kullanmayanlar (gökkuşağı) kendi renklerini üretir; galaksi
+// kalem rengi yerine kendi renk listesini (GALAXY_TINTS) kullanır.
 // icon: paneldeki düğmede gösterilen küçük önizleme (SVG içeriği, viewBox 0 0 32 16).
 const BRUSH_WAVE = 'M3 11c4-7 8-7 13-1s9 6 13-2';
 const BRUSHES = [
@@ -60,7 +66,7 @@ const BRUSHES = [
   { id: 'rainbow', label: 'Gökkuşağı', title: 'Çizdikçe renk değiştirir', noColor: true,
     icon: `<defs><linearGradient id="brushRainbow"><stop offset="0" stop-color="#f03e3e"/><stop offset=".25" stop-color="#fab005"/><stop offset=".5" stop-color="#40c057"/><stop offset=".75" stop-color="#228be6"/><stop offset="1" stop-color="#be4bdb"/></linearGradient></defs>
       <path d="${BRUSH_WAVE}" stroke="url(#brushRainbow)" stroke-width="3.5"/>` },
-  { id: 'galaxy', label: 'Galaksi', title: 'Yıldızlı uzay mürekkebi', noColor: true,
+  { id: 'galaxy', label: 'Galaksi', title: 'Yıldızlı uzay mürekkebi',
     icon: `<defs><linearGradient id="brushGalaxy"><stop offset="0" stop-color="#1b1f6b"/><stop offset=".5" stop-color="#a23bd6"/><stop offset="1" stop-color="#2f6fe0"/></linearGradient></defs>
       <path d="${BRUSH_WAVE}" stroke="url(#brushGalaxy)" stroke-width="4.5"/>
       <g fill="#fff" stroke="none"><circle cx="6.5" cy="6.6" r=".7"/><circle cx="12" cy="5.4" r=".6"/><circle cx="17" cy="10.4" r=".7"/><circle cx="23" cy="10.6" r=".6"/><circle cx="27.5" cy="6.4" r=".6"/></g>` },
@@ -71,6 +77,8 @@ const FONT_SIZES = [16, 24, 36, 56, 80];
 const ERASER_RADIUS = 10; // ekran pikseli
 const TEMP_FADE_MS = 1200; // geçici fosforlu kalemin bırakıldıktan sonra sönme süresi
 const HANDLE = 7;
+const ROT_HANDLE_GAP = 26; // döndürme tutamacının çerçeveye uzaklığı (ekran pikseli)
+const OVERLAY_PANELS = '#toolbar, #props, #filebar, #zoombar, #searchBar'; // tahtanın üstünde duran çubuklar
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
 const SELECT_COLOR = '#4a7cf0';
@@ -83,6 +91,7 @@ const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow', 'compass'];
 // köşesinde rozet olarak görünür, 'num' hızlı sayı tuşu, 'alt' ise eski alışkanlık için yedektir.
 const SHORTCUTS = [
   { target: 'select', key: 'v', num: '1' },
+  { target: 'cut', key: 's' },
   { target: 'pen', key: 'p', num: '2' },
   { target: 'highlighter', key: 'h', num: '3' },
   { target: 'tempHighlighter', key: 'g', num: '4' },
@@ -143,13 +152,14 @@ rebuildKeymap();
 // ---------- Durum ----------
 
 const styles = {
-  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal' },
+  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal', galaxy: 'classic' },
   highlighter: { color: '#ffd400', width: 18 },
   tempHighlighter: { color: '#ffd400', width: 18 },
   shape: { color: '#1f2328', width: 3, fill: 'none' },
   text: { color: '#1f2328', fontSize: 24 },
   note: { color: '#fff3a3', fontSize: 20 },
   cover: { color: '#4a7cf0' },
+  laser: { color: '#ff2d2d' },
   eraser: { mode: 'stroke', all: false }, // mode: 'stroke' (bütün çizgi) | 'partial' (kısmi)
 };
 // PDF eklerken sayfalar kilitlensin mi; PDF dışa aktarma / yazdırma seçenekleri.
@@ -184,6 +194,7 @@ let protractor = null; // açıkken { cx, cy, angle, a1, a2 } (ekran koordinatı
 let crop = null; // resim kırpılırken { id, r: { x, y, w, h } } (dünya koordinatı)
 let search = null; // tahtada arama açıkken { q, hits: [kimlik], i }
 let compass = null; // pergel kuruluyken { cx, cy, r, a } (dünya koordinatı; a: kalem ucunun açısı)
+let fnEdit = null; // koordinat sisteminde denklemi düzenlenen grafik: { id, i: fns içindeki sıra }
 let pinch = null;
 let dpr = window.devicePixelRatio || 1;
 
@@ -449,7 +460,8 @@ function syncMath() {
     if (!MATH_RE.test(el.text)) {
       if (el.math) {
         delete el.math;
-        Object.assign(el, measureText(el.text, el.fontSize));
+        const m = measureText(el.text, el.fontSize);
+        resizeBox(el, m.w, m.h);
       }
       continue;
     }
@@ -475,8 +487,7 @@ function requestMath(el) {
     const cur = board.elements.find((e) => e.id === el.id);
     if (!cur || r?.error || cur.text !== text || mathKey(cur) !== key) return;
     cur.math = { src: r.src, text, key };
-    cur.w = r.w;
-    cur.h = r.h;
+    resizeBox(cur, r.w, r.h);
     sceneCacheValid = false;
     requestRender();
     if (autoSave) scheduleSave();
@@ -579,6 +590,8 @@ function drawOverlay() {
       ctx.strokeRect(r.x, r.y, r.w, r.h);
     }
     ctx.setLineDash([]);
+  } else if (sel.length && !editing && drag?.kind === 'rotate') {
+    drawRotateOverlay(sel);
   } else if (sel.length && !editing) {
     ctx.strokeStyle = SELECT_COLOR;
     ctx.lineWidth = 1;
@@ -590,13 +603,35 @@ function drawOverlay() {
       }
       ctx.setLineDash([]);
     }
+    // Dönmüş kutu öğelerinin kendi (dönük) çerçevesi de ince çizilir.
+    for (const el of sel) {
+      if (!el.rot) continue;
+      const r = screenRect({ x: el.x, y: el.y, w: el.w, h: el.h });
+      ctx.save();
+      ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
+      ctx.rotate(el.rot);
+      ctx.strokeRect(-r.w / 2, -r.h / 2, r.w, r.h);
+      ctx.restore();
+    }
     const handles = handlePositions();
     if (!isSingleLine(sel)) {
       const r = screenRect(unionBBox(sel));
       ctx.lineWidth = 1.5;
       ctx.strokeRect(r.x, r.y, r.w, r.h);
     }
-    for (const p of Object.values(handles)) {
+    if (handles.rot) {
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const dir = handles.rot.below ? -1 : 1;
+      ctx.moveTo(handles.rot.x, handles.rot.y + dir * (HANDLE + 1));
+      ctx.lineTo(handles.rot.x, handles.rot.y + dir * ROT_HANDLE_GAP);
+      ctx.stroke();
+    }
+    for (const [name, p] of Object.entries(handles)) {
+      if (name === 'rot') {
+        drawRotateHandle(p.x, p.y);
+        continue;
+      }
       ctx.fillStyle = '#ffffff';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -607,7 +642,7 @@ function drawOverlay() {
     }
   }
 
-  if (drag?.kind === 'lasso' && drag.points.length > 1) {
+  if ((drag?.kind === 'lasso' || drag?.kind === 'cutLasso') && drag.points.length > 1) {
     ctx.beginPath();
     drag.points.forEach(([x, y], i) => {
       const p = toScreen(x, y);
@@ -641,6 +676,67 @@ function drawOverlay() {
   }
 }
 
+// Döndürme tutamacı: içinde dönen ok bulunan yuvarlak düğme.
+function drawRotateHandle(x, y) {
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = SELECT_COLOR;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, HANDLE + 1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  const r = HANDLE - 3;
+  const a = -Math.PI * 0.35;
+  ctx.beginPath();
+  ctx.arc(x, y, r, a, Math.PI * 1.25);
+  ctx.stroke();
+  // Okun ucu, yayın başında.
+  const tx = x + r * Math.cos(a), ty = y + r * Math.sin(a);
+  ctx.fillStyle = SELECT_COLOR;
+  ctx.beginPath();
+  ctx.moveTo(tx + 3, ty - 2.5);
+  ctx.lineTo(tx + 1, ty + 3);
+  ctx.lineTo(tx - 3.5, ty - 1);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Döndürürken: dönen nesnelerin çerçevesi, merkez noktası, merkezden tutamağa çizgi ve açı.
+function drawRotateOverlay(sel) {
+  const c = toScreen(drag.cx, drag.cy);
+  const p = drag.pointer;
+  ctx.strokeStyle = SELECT_COLOR;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  for (const el of sel) {
+    const r = screenRect(bbox(el));
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+  ctx.beginPath();
+  ctx.moveTo(c.x, c.y);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = SELECT_COLOR;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  drawRotateHandle(p.x, p.y);
+  let deg = Math.round(((drag.base + drag.angle) * 180) / Math.PI) % 360;
+  if (deg < 0) deg += 360;
+  const label = deg + '°';
+  ctx.font = '600 12px "Segoe UI", system-ui, sans-serif';
+  const tw = ctx.measureText(label).width;
+  const lx = p.x + 14, ly = p.y - 26;
+  ctx.fillStyle = 'rgba(31,35,40,0.85)';
+  ctx.beginPath();
+  ctx.roundRect(lx, ly, tw + 12, 20, 5);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, lx + 6, ly + 10);
+}
+
 // ---------- Seçim yardımcıları ----------
 
 function selectedEls() {
@@ -659,12 +755,24 @@ function handlePositions() {
     return { p1: toScreen(el.x1, el.y1), p2: toScreen(el.x2, el.y2) };
   }
   const r = screenRect(unionBBox(sel));
-  return {
+  const h = {
     nw: { x: r.x, y: r.y },
     ne: { x: r.x + r.w, y: r.y },
     sw: { x: r.x, y: r.y + r.h },
     se: { x: r.x + r.w, y: r.y + r.h },
   };
+  // Döndürme tutamacı: çerçevenin üst kenarının ortasının biraz yukarısında; orada ekranın
+  // dışında ya da bir panelin altında kalacaksa alt kenarın altında.
+  if (sel.every(canRotate)) {
+    const x = r.x + r.w / 2;
+    const up = r.y - ROT_HANDLE_GAP;
+    const covered = up < HANDLE * 2 || [...document.querySelectorAll(OVERLAY_PANELS)].some((p) => {
+      const b = p.getBoundingClientRect();
+      return b.width > 0 && x >= b.left - HANDLE && x <= b.right + HANDLE && up >= b.top - HANDLE && up <= b.bottom + HANDLE;
+    });
+    h.rot = { x, y: covered ? r.y + r.h + ROT_HANDLE_GAP : up, below: covered };
+  }
+  return h;
 }
 
 function hitHandle(sx, sy) {
@@ -746,6 +854,7 @@ function zoomAt(factor, sx, sy) {
   sceneCacheValid = false;
   scheduleViewSave();
   requestRender();
+  refreshCursor();
 }
 
 function zoomFit() {
@@ -764,6 +873,7 @@ function zoomFit() {
   }
   scheduleViewSave();
   requestRender();
+  refreshCursor();
 }
 
 // Görünüm değişikliği de kaydedilir ama "Kaydediliyor" yazısı gösterilmez.
@@ -891,6 +1001,7 @@ canvas.addEventListener('pointerdown', (e) => {
         pressure: e.pointerType === 'pen',
       };
       if (t === 'pen' && st.brush !== 'normal') el.brush = st.brush;
+      if (el.brush === 'galaxy' && st.galaxy && st.galaxy !== 'classic') el.galaxy = st.galaxy;
       board.elements.push(el);
       drag = { kind: 'draw', el, straight: false, anchor: 0 };
       autoHideProps();
@@ -973,6 +1084,10 @@ canvas.addEventListener('pointerdown', (e) => {
     case 'select':
       startSelectDrag(e, w);
       break;
+
+    case 'cut':
+      drag = { kind: 'cutLasso', points: [[w.x, w.y]] };
+      break;
   }
   requestRender();
 });
@@ -987,13 +1102,25 @@ function startSelectDrag(e, w) {
       return;
     }
     const b = unionBBox(sel);
+    if (handle === 'rot') {
+      // Seçim, çerçevesinin merkezi etrafında döner. Tek kutu öğesinde gösterilen açı toplam açıdır.
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      const base = sel.length === 1 && sel[0].rot ? sel[0].rot : 0;
+      drag = {
+        kind: 'rotate', cx, cy, originals, base, angle: 0, moved: false,
+        start: Math.atan2(w.y - cy, w.x - cx), pointer: { x: e.clientX, y: e.clientY },
+      };
+      return;
+    }
     const corners = {
       nw: { x: b.x, y: b.y }, ne: { x: b.x + b.w, y: b.y },
       sw: { x: b.x, y: b.y + b.h }, se: { x: b.x + b.w, y: b.y + b.h },
     };
     const opposite = { nw: 'se', ne: 'sw', sw: 'ne', se: 'nw' };
-    const freeform = sel.length === 1 && ['rect', 'ellipse', 'polygon', 'note'].includes(sel[0].type);
-    drag = { kind: 'resize', anchor: corners[opposite[handle]], corner: corners[handle], originals, freeform, moved: false };
+    // Dönmüş kutu öğeleri yalnızca orantılı büyür; serbest boyutlandırma onları çarpıtırdı.
+    const keepRatio = sel.some((el) => el.rot);
+    const freeform = sel.length === 1 && ['rect', 'ellipse', 'polygon', 'note'].includes(sel[0].type) && !keepRatio;
+    drag = { kind: 'resize', anchor: corners[opposite[handle]], corner: corners[handle], originals, freeform, keepRatio, moved: false };
     return;
   }
 
@@ -1129,7 +1256,7 @@ canvas.addEventListener('pointermove', (e) => {
       const { anchor: a, corner: c } = drag;
       let sx = (w.x - a.x) / (c.x - a.x || 1);
       let sy = (w.y - a.y) / (c.y - a.y || 1);
-      if (drag.freeform === e.shiftKey) {
+      if (drag.keepRatio || drag.freeform === e.shiftKey) {
         const s = Math.max(Math.abs(sx), Math.abs(sy));
         sx = s * (Math.sign(sx) || 1);
         sy = s * (Math.sign(sy) || 1);
@@ -1137,6 +1264,28 @@ canvas.addEventListener('pointermove', (e) => {
       if (Math.abs(sx) < 0.02) sx = 0.02 * (Math.sign(sx) || 1);
       if (Math.abs(sy) < 0.02) sy = 0.02 * (Math.sign(sy) || 1);
       for (const el of selectedEls()) scaleFrom(el, drag.originals.get(el.id), a.x, a.y, sx, sy);
+      break;
+    }
+
+    case 'rotate': {
+      let a = Math.atan2(w.y - drag.cy, w.x - drag.cx) - drag.start;
+      // Shift: toplam açı 15°'lik adımlara oturur; Shift'siz de 0/90/180/270'e yaklaşınca yapışır.
+      const total = drag.base + a;
+      if (e.shiftKey) {
+        const step = Math.PI / 12;
+        a = Math.round(total / step) * step - drag.base;
+      } else {
+        const right = Math.round(total / (Math.PI / 2)) * (Math.PI / 2);
+        if (Math.abs(total - right) < (3 * Math.PI) / 180) a = right - drag.base;
+      }
+      drag.pointer = { x: e.clientX, y: e.clientY };
+      if (!drag.moved) {
+        if (Math.abs(a) < 1e-9) break;
+        checkpoint();
+        drag.moved = true;
+      }
+      drag.angle = a;
+      for (const el of selectedEls()) rotateAround(el, drag.originals.get(el.id), drag.cx, drag.cy, a);
       break;
     }
 
@@ -1164,6 +1313,12 @@ canvas.addEventListener('pointermove', (e) => {
       if (drag.points.length > 2) {
         for (const el of board.elements) if (!el.locked && insideLasso(el, drag.points)) selection.add(el.id);
       }
+      break;
+    }
+
+    case 'cutLasso': {
+      const last = drag.points[drag.points.length - 1];
+      if (Math.hypot(w.x - last[0], w.y - last[1]) * board.view.zoom >= 3) drag.points.push([w.x, w.y]);
       break;
     }
   }
@@ -1239,10 +1394,14 @@ function endPointer(e) {
     case 'move':
     case 'resize':
     case 'endpoint':
+    case 'rotate':
       if (d.moved) changed();
       break;
     case 'lasso':
       updateProps();
+      break;
+    case 'cutLasso':
+      cutWithLasso(d.points);
       break;
   }
   updateCursor(e);
@@ -1257,6 +1416,36 @@ canvas.addEventListener('pointerleave', () => {
     requestRender();
   }
 });
+
+// Makas: kementin içinden geçen çizgileri kement sınırından keser ve içeride kalan parçaları
+// (tamamen içerdeki nesnelerle birlikte) seçer; ardından Ctrl+X / Ctrl+C / sürükleme ile kullanılır.
+// Kesme ayrı bir geri alma adımıdır; Ctrl+Z çizgileri yeniden birleştirir.
+function cutWithLasso(lasso) {
+  if (lasso.length < 3) return;
+  const picked = [];
+  const replacements = new Map();
+  for (const el of board.elements) {
+    if (el.locked) continue;
+    const parts = splitByLasso(el, lasso);
+    if (parts && parts.inside.length) {
+      replacements.set(el, [...parts.outside, ...parts.inside]);
+      picked.push(...parts.inside);
+    } else if (!parts && insideLasso(el, lasso)) picked.push(el);
+  }
+  if (!picked.length) {
+    toast('Kementin içinde kesilecek bir şey yok');
+    return;
+  }
+  if (replacements.size) {
+    checkpoint();
+    board.elements = board.elements.flatMap((el) => replacements.get(el) ?? [el]);
+  }
+  setTool('select');
+  selection = new Set(picked.map((el) => el.id));
+  if (replacements.size) changed();
+  updateProps();
+  toast('Parça seçildi — Ctrl+X kes, Ctrl+C kopyala ya da sürükleyip taşı');
+}
 
 // Elle çizilen şekli düzgün şekle çevirir. Ayrı bir geri alma adımı olduğu için
 // Ctrl+Z orijinal el çizimini geri getirir.
@@ -1554,6 +1743,7 @@ const CROP_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 function startCrop() {
   const el = selectedEls()[0];
   if (!el || el.type !== 'image' || el.locked) return;
+  if (el.rot) return toast('Döndürülmüş resim kırpılamaz — önce düz hâle getir');
   const img = getImage(el.src);
   if (!img.complete || !img.naturalWidth) return toast('Resim henüz yüklenmedi');
   crop = { id: el.id, r: { x: el.x, y: el.y, w: el.w, h: el.h } };
@@ -1688,7 +1878,7 @@ function cropCursor(part) {
 }
 
 // ---------- Lazer işaretçi ----------
-// Sunum yaparken imleç kırmızı parlayan bir nokta olur; basılı tutup çizince arkasında kısa
+// Sunum yaparken imleç parlayan bir nokta olur (rengi panelden seçilir); basılı tutup çizince arkasında kısa
 // süre görünüp sönen bir iz bırakır. Tahtaya kaydedilmez, geri alma listesine girmez.
 
 const LASER_FADE_MS = 700;
@@ -1699,19 +1889,27 @@ function addLaserPoint(x, y) {
   laserTrail.push({ x, y, t: performance.now(), s: laserStroke });
 }
 
+// '#rrggbb' -> 'r, g, b' (rgba() içinde saydamlıkla kullanmak için).
+function rgbOf(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  const n = m ? parseInt(m[1], 16) : 0xff2d2d;
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+
 function drawLaser() {
   const now = performance.now();
   laserTrail = laserTrail.filter((p) => now - p.t < LASER_FADE_MS);
+  const rgb = rgbOf(styles.laser.color);
   ctx.save();
   ctx.lineCap = 'round';
-  ctx.shadowColor = 'rgba(255, 0, 0, 0.8)';
+  ctx.shadowColor = `rgba(${rgb}, 0.8)`;
   ctx.shadowBlur = 10;
   for (let i = 1; i < laserTrail.length; i++) {
     const a = laserTrail[i - 1];
     const b = laserTrail[i];
     if (a.s !== b.s) continue;
     const k = 1 - (now - b.t) / LASER_FADE_MS;
-    ctx.strokeStyle = `rgba(255, 45, 45, ${0.9 * k})`;
+    ctx.strokeStyle = `rgba(${rgb}, ${0.9 * k})`;
     ctx.lineWidth = 2 + 4 * k;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
@@ -1721,8 +1919,8 @@ function drawLaser() {
   if (pointer && activeTool() === 'laser') {
     const g = ctx.createRadialGradient(pointer.x, pointer.y, 0, pointer.x, pointer.y, 11);
     g.addColorStop(0, 'rgba(255, 255, 255, 1)');
-    g.addColorStop(0.3, 'rgba(255, 50, 50, 1)');
-    g.addColorStop(1, 'rgba(255, 0, 0, 0)');
+    g.addColorStop(0.3, `rgba(${rgb}, 1)`);
+    g.addColorStop(1, `rgba(${rgb}, 0)`);
     ctx.shadowBlur = 0;
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -1905,6 +2103,7 @@ function updatePinch() {
   v.x = mid.x - pinch.world.x * v.zoom;
   v.y = mid.y - pinch.world.y * v.zoom;
   requestRender();
+  refreshCursor();
 }
 
 // ---------- Tekerlek ----------
@@ -1938,12 +2137,35 @@ canvas.addEventListener('wheel', (e) => {
 
 // ---------- İmleç ----------
 
+// Fırçalarda imleç, fırçanın renginde ve ekrandaki kalınlığında siyah kenarlı bir noktadır.
+// Chromium 128 pikselden büyük imleç resimlerini yok saydığı için çap sınırlanır.
+let brushCursorKey = '';
+let brushCursorValue = 'crosshair';
+function brushCursor(st, translucent) {
+  const d = Math.round(Math.min(96, Math.max(4, st.width * board.view.zoom)) * 2) / 2;
+  const key = `${st.color}|${d}|${translucent}`;
+  if (key === brushCursorKey) return brushCursorValue;
+  const size = Math.ceil(d + 4);
+  const c = size / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">`
+    + `<circle cx="${c}" cy="${c}" r="${d / 2}" fill="${st.color}"${translucent ? ' fill-opacity="0.5"' : ''} stroke="#000" stroke-width="1.5"/></svg>`;
+  brushCursorKey = key;
+  brushCursorValue = `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${Math.floor(c)} ${Math.floor(c)}, crosshair`;
+  return brushCursorValue;
+}
+
+// Yakınlaştırma ya da fırça ayarı değişince imleci son fare konumuna göre yeniler.
+function refreshCursor() {
+  updateCursor(pointer ? { clientX: pointer.x, clientY: pointer.y } : undefined);
+}
+
 function updateCursor(e) {
   const t = activeTool();
   let c = 'default';
-  if (drag?.kind === 'pan') c = 'grabbing';
+  if (drag?.kind === 'pan' || drag?.kind === 'rotate') c = 'grabbing';
   else if (t === 'hand') c = 'grab';
-  else if (t === 'pen' || t === 'highlighter' || t === 'tempHighlighter' || SHAPE_TOOLS.includes(t) || t === 'note' || t === 'cover') c = 'crosshair';
+  else if (t === 'pen' || t === 'highlighter' || t === 'tempHighlighter') c = brushCursor(styles[t], t !== 'pen');
+  else if (SHAPE_TOOLS.includes(t) || t === 'note' || t === 'cover' || t === 'cut') c = 'crosshair';
   else if (t === 'eraser' || t === 'laser') c = 'none';
   else if (t === 'text') c = 'text';
   const ph = protractor && e && !drag && t !== 'hand' ? protractorHit(protractor, e.clientX, e.clientY) : null;
@@ -1965,6 +2187,7 @@ function updateCursor(e) {
     const h = hitHandle(e.clientX, e.clientY);
     if (h === 'nw' || h === 'se') c = 'nwse-resize';
     else if (h === 'ne' || h === 'sw') c = 'nesw-resize';
+    else if (h === 'rot') c = 'grab';
     else if (h) c = 'move';
     else if (topHit(toWorld(e.clientX, e.clientY))) c = 'move';
   }
@@ -2010,12 +2233,16 @@ function positionEditor() {
     editor.style.width = (m.w + el.fontSize) * z + 'px';
     editor.style.height = m.h * z + 'px';
   }
+  // Dönmüş öğenin düzenleyicisi de öğenin merkezi etrafında dönük durur.
+  const pad = el.type === 'note' ? NOTE_PADDING : 0;
+  editor.style.transformOrigin = `${(el.w / 2 - pad) * z}px ${(el.h / 2 - pad) * z}px`;
+  editor.style.transform = el.rot ? `rotate(${el.rot}rad)` : '';
 }
 
 // Not, yazılan metne göre aşağı doğru büyür.
 function fitNoteHeight(el, text) {
   const need = wrappedHeight(text, el.fontSize, el.w - NOTE_PADDING * 2) + NOTE_PADDING * 2;
-  if (need > el.h) el.h = need;
+  if (need > el.h) resizeBox(el, el.w, need);
 }
 
 editor.addEventListener('input', () => {
@@ -2047,7 +2274,10 @@ function commitEditor() {
   } else {
     el.text = text;
     // Formül resmi hâlâ aynı yazıya aitse boyutu korunur; değilse yeni resim gelene kadar düz metin ölçüsü.
-    if (el.type === 'text' && el.math?.text !== text) Object.assign(el, measureText(text, el.fontSize));
+    if (el.type === 'text' && el.math?.text !== text) {
+      const m = measureText(text, el.fontSize);
+      resizeBox(el, m.w, m.h);
+    }
     else if (el.type === 'note') fitNoteHeight(el, text);
     if (!isNew && text === oldText && el.h === oldH) {
       undoStack.pop();
@@ -2077,11 +2307,18 @@ function propsContext() {
     const sel = selectedEls();
     const has = (...types) => sel.some((el) => types.includes(el.type));
     const first = (...types) => sel.find((el) => types.includes(el.type)) || {};
-    const ctx = { arrange: true, values: { locked: sel.every((el) => el.locked) } };
+    const ctx = { arrange: true, rotatable: sel.every((el) => canRotate(el) && !el.locked), values: { locked: sel.every((el) => el.locked) } };
     if (has('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes')) {
       ctx.colors = sel.every((el) => el.highlighter) ? HIGHLIGHT_COLORS
         : sel.every((el) => el.type === 'cover') ? COVER_COLORS : INK_COLORS;
       ctx.values.color = first('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes').color;
+    }
+    // Yalnızca galaksi çizgileri seçiliyse renk satırı galaksi renklerini gösterir.
+    if (sel.every((el) => el.type === 'stroke' && !el.highlighter && el.brush === 'galaxy')) {
+      ctx.colors = GALAXY_TINTS;
+      ctx.colorProp = 'galaxy';
+      const g = sel[0].galaxy || 'classic';
+      ctx.values.color = sel.every((el) => (el.galaxy || 'classic') === g) ? g : null;
     }
     ctx.cover = has('cover');
     ctx.axes = sel.length === 1 && sel[0].type === 'axes' ? sel[0] : null;
@@ -2115,12 +2352,14 @@ function propsContext() {
   const t = activeTool();
   if (t === 'pen') {
     const brush = BRUSHES.find((b) => b.id === styles.pen.brush) || BRUSHES[0];
+    const galaxy = brush.id === 'galaxy';
     return {
-      colors: brush.noColor ? null : INK_COLORS,
+      colors: brush.noColor ? null : galaxy ? GALAXY_TINTS : INK_COLORS,
+      colorProp: galaxy ? 'galaxy' : 'color',
       widths: brush.id === 'tape' ? TAPE_WIDTHS : PEN_WIDTHS,
       brushes: true,
       toShape: brush.id !== 'arrow' && brush.id !== 'dashedarrow',
-      values: styles.pen,
+      values: galaxy ? { ...styles.pen, color: styles.pen.galaxy || 'classic' } : styles.pen,
     };
   }
   if (t === 'highlighter') return { colors: HIGHLIGHT_COLORS, widths: HIGHLIGHT_WIDTHS, values: styles.highlighter };
@@ -2132,10 +2371,12 @@ function propsContext() {
   if (t === 'text') return { colors: INK_COLORS, font: true, values: styles.text };
   if (t === 'note') return { noteColors: true, font: true, values: { noteColor: styles.note.color, fontSize: styles.note.fontSize } };
   if (t === 'eraser') return { eraser: true };
+  if (t === 'laser') return { colors: LASER_COLORS, values: styles.laser };
   return null;
 }
 
 function updateProps() {
+  document.body.style.setProperty('--laser-color', styles.laser.color);
   const panel = $('#props');
   const c = propsContext();
   if (!c) {
@@ -2155,7 +2396,8 @@ function updateProps() {
   panel.classList.toggle('collapsed', propsUi.collapsed);
   const toggle = $('#propsToggle');
   toggle.title = propsUi.collapsed ? 'Paneli göster' : 'Paneli gizle';
-  const dotColor = c.colors ? v.color : c.noteColors ? v.noteColor : null;
+  let dotColor = c.colors ? v.color : c.noteColors ? v.noteColor : null;
+  if (dotColor === 'classic') dotColor = GALAXY_CLASSIC_BG;
   const dot = toggle.querySelector('.tab-dot');
   dot.classList.toggle('hidden', !propsUi.collapsed || !dotColor);
   if (dotColor) dot.style.background = dotColor;
@@ -2175,12 +2417,14 @@ function updateProps() {
 
   const colorRow = $('#colorRow');
   colorRow.classList.toggle('hidden', !c.colors);
+  colorRow.dataset.prop = c.colorProp || 'color';
   if (c.colors) {
-    const custom = !c.colors.includes(v.color);
-    colorRow.innerHTML = c.colors.map((col) =>
-      `<button class="swatch${col === v.color ? ' selected' : ''}" data-color="${col}" style="background:${col}" title="${col}"></button>`,
-    ).join('') +
-      `<label class="swatch custom${custom ? ' selected' : ''}" title="Özel renk"><input type="color" value="${v.color || '#000000'}" /></label>`;
+    const custom = v.color != null && !c.colors.includes(v.color);
+    colorRow.innerHTML = c.colors.map((col) => {
+      const classic = col === 'classic';
+      return `<button class="swatch${col === v.color ? ' selected' : ''}" data-color="${col}" style="background:${classic ? GALAXY_CLASSIC_BG : col}" title="${classic ? 'Klasik galaksi' : col}"></button>`;
+    }).join('') +
+      `<label class="swatch custom${custom ? ' selected' : ''}" title="Özel renk"><input type="color" value="${/^#[0-9a-f]{6}$/i.test(v.color || '') ? v.color : '#000000'}" /></label>`;
   }
 
   const noteRow = $('#noteColorRow');
@@ -2219,17 +2463,25 @@ function updateProps() {
   const ax = c.axes;
   $('#axesRow').classList.toggle('hidden', !ax);
   $('#fnList').classList.toggle('hidden', !ax?.fns?.length);
+  // Düzenlenen grafik başka bir öğeye ya da artık olmayan bir satıra aitse düzenlemeden çık.
+  if (fnEdit && (!ax || fnEdit.id !== ax.id || !ax.fns?.[fnEdit.i])) fnEdit = null;
   if (ax) {
     $('[data-axes-grid]').classList.toggle('selected', !!ax.grid);
-    $('#fnList').innerHTML = (ax.fns || []).map((f, i) =>
-      `<button class="chip fnchip" data-fn-remove="${i}" title="Bu grafiği kaldır"><span class="fndot" style="background:${f.color}"></span>${escHtml(functionLabel(f.expr))} <span class="muted">×</span></button>`,
-    ).join('');
+    // Çip içinde yazılırken listeyi yeniden kurma; yoksa kutu ve imleç kaybolur.
+    const live = $('#fnList .fninline');
+    if (!(fnEdit && live && Number(live.dataset.fnInline) === fnEdit.i)) {
+      $('#fnList').innerHTML = (ax.fns || []).map((f, i) => (fnEdit?.i === i
+        ? `<span class="fnchip editing"><span class="chip fnedit"><span class="fndot" style="background:${f.color}"></span><input class="fninline" data-fn-inline="${i}" type="text" value="${escHtml(functionLabel(f.expr))}" spellcheck="false" autocomplete="off" title="Enter: kaydet — Esc: vazgeç" /></span></span>`
+        : `<span class="fnchip"><button class="chip fnedit" data-fn-edit="${i}" title="Denklemi düzenle"><span class="fndot" style="background:${f.color}"></span>${escHtml(functionLabel(f.expr))}</button><button class="chip fnremove" data-fn-remove="${i}" title="Bu grafiği kaldır">×</button></span>`),
+      ).join('');
+    }
   }
   const lockChip = $('[data-arrange="lock"]');
   lockChip.textContent = v.locked ? 'Kilidi aç' : 'Kilitle';
   lockChip.classList.toggle('selected', !!v.locked);
   lockChip.classList.toggle('hidden', !studentMode && !v.locked);
   $('#arrangeRow').classList.toggle('hidden', !c.arrange);
+  for (const b of document.querySelectorAll('[data-arrange^="rot"]')) b.classList.toggle('hidden', !c.rotatable);
   $('#cropRow').classList.toggle('hidden', !c.crop);
   $('#imageRow').classList.toggle('hidden', !c.cropable);
   $('#obsidianRow').classList.toggle('hidden', !c.obsidian);
@@ -2261,11 +2513,19 @@ function applyStyle(prop, value) {
       if (prop === 'noteColor' && el.type === 'note') el.color = value;
       if (prop === 'width' && ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type)) el.width = value;
       if (prop === 'fill' && ['rect', 'ellipse', 'polygon'].includes(el.type)) el.fill = value;
+      if (prop === 'galaxy' && el.type === 'stroke' && el.brush === 'galaxy') {
+        if (value === 'classic') delete el.galaxy;
+        else el.galaxy = value;
+      }
       if (prop === 'brush' && el.type === 'stroke' && !el.highlighter) {
         if (value === 'normal') delete el.brush;
         else el.brush = value;
       }
-      if (prop === 'fontSize' && el.type === 'text') Object.assign(el, { fontSize: value }, measureText(el.text, value));
+      if (prop === 'fontSize' && el.type === 'text') {
+        el.fontSize = value;
+        const m = measureText(el.text, value);
+        resizeBox(el, m.w, m.h);
+      }
       if (prop === 'fontSize' && el.type === 'note') {
         el.fontSize = value;
         fitNoteHeight(el, el.text);
@@ -2284,12 +2544,13 @@ function applyStyle(prop, value) {
   }
   savePrefs();
   updateProps();
+  refreshCursor();
 }
 
 $('#props').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
-  if (b.dataset.color) applyStyle('color', b.dataset.color);
+  if (b.dataset.color) applyStyle($('#colorRow').dataset.prop || 'color', b.dataset.color);
   else if (b.dataset.noteColor) applyStyle('noteColor', b.dataset.noteColor);
   else if (b.dataset.width) applyStyle('width', Number(b.dataset.width));
   else if (b.dataset.font) applyStyle('fontSize', Number(b.dataset.font));
@@ -2318,9 +2579,19 @@ $('#props').addEventListener('click', (e) => {
     ax.grid = !ax.grid;
     changed();
   } else if ('axesAdd' in b.dataset) addFunction();
-  else if (b.dataset.fnRemove) {
+  else if (b.dataset.fnEdit) {
+    const ax = selectedEls()[0];
+    const i = Number(b.dataset.fnEdit);
+    closeFnEdit();
+    fnEdit = { id: ax.id, i };
+    updateProps();
+    const input = $('#fnList .fninline');
+    input.focus();
+    input.select();
+  } else if (b.dataset.fnRemove) {
     const ax = selectedEls()[0];
     const i = Number(b.dataset.fnRemove);
+    closeFnEdit();
     checkpoint();
     ax.fns = ax.fns.filter((_, k) => k !== i); // dizi yerinde değiştirilmez (geri alma kopyası paylaşıyor)
     changed();
@@ -2351,7 +2622,62 @@ $('#props').addEventListener('click', (e) => {
 });
 
 $('#props').addEventListener('change', (e) => {
-  if (e.target.type === 'color') applyStyle('color', e.target.value);
+  if (e.target.type === 'color') applyStyle($('#colorRow').dataset.prop || 'color', e.target.value);
+});
+
+// Çip içindeki düzenlemeyi bitirir: save ise geçerli denklemi yazar, değilse vazgeçer.
+function finishFnEdit(save) {
+  if (!fnEdit) return;
+  const input = $('#fnList .fninline');
+  const ax = selectedEls()[0];
+  const i = fnEdit.i;
+  if (save && input && ax?.type === 'axes' && ax.fns?.[i]) {
+    const expr = input.value.trim().replace(/^(?:y|f\s*\(\s*x\s*\))\s*=\s*/, '');
+    const r = compileFunction(expr);
+    if (r.error) {
+      input.classList.add('invalid');
+      toast('Fonksiyon anlaşılamadı: ' + r.error);
+      return false;
+    }
+    fnEdit = null;
+    if (ax.fns[i].expr !== expr) {
+      checkpoint();
+      // dizi yerinde değiştirilmez (geri alma kopyası paylaşıyor)
+      ax.fns = ax.fns.map((f, k) => (k === i ? { ...f, expr } : f));
+      changed();
+      return true;
+    }
+  }
+  fnEdit = null;
+  updateProps();
+  return true;
+}
+
+$('#fnList').addEventListener('keydown', (e) => {
+  if (!e.target.classList.contains('fninline')) return;
+  e.stopPropagation();
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    finishFnEdit(true);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    finishFnEdit(false);
+  }
+});
+$('#fnList').addEventListener('input', (e) => e.target.classList.remove('invalid'));
+// Açık düzenlemeyi kapatır: geçerliyse kaydeder, geçersizse eski hâline döner.
+function closeFnEdit() {
+  if (fnEdit && finishFnEdit(true) === false) finishFnEdit(false);
+}
+
+// Kutudan çıkınca düzenlemeyi kapat. Tıklama yeni hedefine ulaşsın diye bir sonraki adıma ertelenir;
+// o arada başka bir çip düzenlemeyi kendisi kapatıp yenisini açtıysa dokunma.
+$('#fnList').addEventListener('focusout', (e) => {
+  if (!e.target.classList.contains('fninline') || !fnEdit) return;
+  const ed = fnEdit;
+  setTimeout(() => {
+    if (fnEdit === ed) closeFnEdit();
+  });
 });
 
 // Koordinat sistemine fonksiyon grafiği ekler (paneldeki kutudan).
@@ -2410,9 +2736,22 @@ function arrange(action) {
   if (action === 'delete') return deleteSelection();
   if (action === 'duplicate') return duplicateSelection();
   if (action === 'lock') return toggleLock();
+  if (action === 'rotl') return rotateSelection(-Math.PI / 2);
+  if (action === 'rotr') return rotateSelection(Math.PI / 2);
   checkpoint();
   const rest = board.elements.filter((el) => !selection.has(el.id));
   board.elements = action === 'front' ? [...rest, ...sel] : [...sel, ...rest];
+  changed();
+}
+
+// Seçimi, çerçevesinin merkezi etrafında döndürür (panel düğmeleri).
+function rotateSelection(a) {
+  const sel = selectedEls();
+  if (!sel.length || !sel.every((el) => canRotate(el) && !el.locked)) return;
+  const b = unionBBox(sel);
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  checkpoint();
+  for (const el of sel) rotateAround(el, cloneEl(el), cx, cy, a);
   changed();
 }
 
@@ -2839,7 +3178,7 @@ const helpOpen = () => !help.classList.contains('hidden');
 
 // Araç hedeflerinin rehberdeki adları (SHORTCUTS tablosunun tek eksiği bu etiketler).
 const TOOL_LABELS = {
-  select: 'Seç', pen: 'Kalem', highlighter: 'Fosforlu kalem', tempHighlighter: 'Geçici fosforlu kalem', laser: 'Lazer işaretçi',
+  select: 'Seç', cut: 'Makas (parça kes / kopyala)', pen: 'Kalem', highlighter: 'Fosforlu kalem', tempHighlighter: 'Geçici fosforlu kalem', laser: 'Lazer işaretçi',
   eraser: 'Silgi', ruler: 'Cetveli aç / kapat', protractor: 'Açıölçeri aç / kapat', rect: 'Dikdörtgen',
   ellipse: 'Elips', line: 'Çizgi', arrow: 'Ok', compass: 'Pergel', text: 'Metin', note: 'Yapışkan not',
   cover: 'Gizleme bandı', image: 'Resim veya PDF ekle', obsidian: "Obsidian'dan ekle", axes: 'Koordinat sistemi ekle',
@@ -3945,6 +4284,9 @@ async function init() {
     loadBoard(emptyBoard());
     zoomFit();
   }
+  // Uygulama "Tahtalarım" ile açılır; son tahta arkada yüklü kalır (Esc onu gösterir).
+  // Bir .tahta dosyasına çift tıklanarak açıldıysa doğrudan o tahta gösterilir.
+  if (!res.fromArgv) openGallery();
 }
 
 init();

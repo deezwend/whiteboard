@@ -1,6 +1,7 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
   loadInitial: () => ipcRenderer.invoke('board:loadInitial'),
   save: (json) => ipcRenderer.invoke('board:save', json),
   saveSync: (json) => ipcRenderer.sendSync('board:saveSync', json),

@@ -15,9 +15,14 @@
   <!-- Ana araç çubuğu. .tgroup içindeki araçlar tek düğmede toplanır (app.js "Araç grupları"); düğme son
        kullanılan aracın ikonunu gösterir, diğerleri açılır menüdedir -->
   <div id="toolbar" class="panel">
-    <button class="tool" data-tool="select" title="Seç">
-      <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg>
-    </button>
+    <div class="tgroup" data-group="select" data-title="Seç">
+      <button class="tool" data-tool="select" title="Seç">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg>
+      </button>
+      <button class="tool" data-tool="cut" title="Makas — bir parçanın etrafını çiz: içinden geçen çizgiler kesilir, parça seçilir (Ctrl+X kes, Ctrl+C kopyala)">
+        <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 7.6L20 18M8.6 16.4L20 6"/></svg>
+      </button>
+    </div>
     <button class="tool" data-tool="hand" title="Kaydır — taşımak için boşluk tuşunu veya orta fare düğmesini basılı tut">
       <svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 013 0V12m0-1.5v-6a1.5 1.5 0 013 0V12m0-5.5a1.5 1.5 0 013 0V12m0-3.5a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-2a6 6 0 01-5-2.7L4.6 14a1.6 1.6 0 012.6-1.8L8 13"/></svg>
     </button>
@@ -145,6 +150,8 @@
       <button class="chip" data-arrange="front" title="Öne getir ( ] )">Öne</button>
       <button class="chip" data-arrange="back" title="Arkaya gönder ( [ )">Arkaya</button>
       <button class="chip" data-arrange="duplicate" title="Çoğalt (Ctrl+D)">Çoğalt</button>
+      <button class="chip" data-arrange="rotl" title="Sola 90° döndür (serbest döndürmek için seçimin üstündeki yuvarlak tutamacı sürükle)">↺ 90°</button>
+      <button class="chip" data-arrange="rotr" title="Sağa 90° döndür (serbest döndürmek için seçimin üstündeki yuvarlak tutamacı sürükle)">↻ 90°</button>
       <button class="chip" data-arrange="lock" title="Kilitli nesne taşınmaz, silinmez, tıklamayla seçilmez; çift tıklayınca seçilir (Ctrl+L)">Kilitle</button>
       <button class="chip danger" data-arrange="delete" title="Sil (Delete)">Sil</button>
     </div>
@@ -386,7 +393,8 @@
               <li><b>Kesikli</b> – kesik kesik çizgi.</li>
               <li><b>Oklu</b> – çizginin sonuna ok ucu ekler.</li>
               <li><b>Kesikli ok</b> – kesik kesik çizgi çizer, sonuna ok ucu ekler.</li>
-              <li><b>Gökkuşağı</b> ve <b>Galaksi</b> – kendi renkleri vardır, renk seçimi uygulanmaz.</li>
+              <li><b>Gökkuşağı</b> – kendi renkleri vardır, renk seçimi uygulanmaz.</li>
+              <li><b>Galaksi</b> – yıldızlı uzay mürekkebi; renk satırından klasik uzay renkleri ya da başka bir ton (özel renk dahil) seçilebilir. Seçili galaksi çizgilerinin rengi de sonradan değiştirilebilir.</li>
               <li><b>Bant</b> – desenli yapışkan bant (washi).</li>
             </ul>
             <h4>Düz çizgi çizmek</h4>
@@ -401,7 +409,7 @@
             <p>Sunum ve anlatım için işaretçi gibi kullan. Çizdiğin şey ekranda <b>basılı tuttuğun sürece kalır</b>, bırakınca yavaşça kaybolur. Tahtaya kaydedilmez ve geri alma listesine girmez.</p>
 
             <h3>Lazer işaretçi <kbd>W</kbd></h3>
-            <p>Anlatırken ya da ekran paylaşırken göstermek için. İmleç kırmızı parlayan bir noktaya dönüşür; basılı tutup çizersen arkasında kısa süre görünüp sönen bir iz kalır. Tahtaya hiçbir şey eklenmez. Kalemler grubundadır.</p>
+            <p>Anlatırken ya da ekran paylaşırken göstermek için. İmleç parlayan bir noktaya dönüşür; basılı tutup çizersen arkasında kısa süre görünüp sönen bir iz kalır. Rengini özellik panelinden seçebilirsin (varsayılan kırmızı). Tahtaya hiçbir şey eklenmez. Kalemler grubundadır.</p>
 
             <h3>Silgi <kbd>5</kbd> / <kbd>E</kbd></h3>
             <ul>
@@ -435,10 +443,11 @@
               <li><b>Seçimi bırak:</b> boş bir yere tıkla ya da <kbd>Esc</kbd>.</li>
             </ul>
 
-            <h3>Taşıma ve boyutlandırma</h3>
+            <h3>Taşıma, boyutlandırma ve döndürme</h3>
             <ul>
               <li><b>Taşı:</b> seçili nesneyi sürükle ya da ok tuşlarına bas (1 piksel; <kbd>Shift</kbd> ile 10 piksel).</li>
               <li><b>Boyutlandır:</b> köşedeki tutamacı sürükle. Dikdörtgen, elips, çokgen ve notlar serbestçe; diğer nesneler oranı koruyarak büyür.</li>
+              <li><b>Döndür:</b> seçimin üstündeki yuvarlak tutamacı sürükle; nesne kendi merkezi etrafında 360° döner, yanında açı görünür. 0°, 90°, 180° ve 270°'ye yaklaşınca yapışır; <kbd>Shift</kbd> basılıyken 15°'lik adımlarla döner. Panelde <b>↺ 90°</b> / <b>↻ 90°</b> çeyrek tur döndürür. Birden fazla nesne seçiliyse hepsi birlikte döner. Dönmüş nesneler oranı koruyarak büyür; dönmüş resim kırpılmaz. Koordinat sistemi döndürülemez.</li>
               <li><b>Çizgi ve ok uçları:</b> tek bir çizgi ya da ok seçiliyken iki ucundaki tutamaçlardan uçlarını ayrı ayrı taşıyabilirsin.</li>
             </ul>
 
@@ -447,6 +456,7 @@
               <li><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd>: kopyala, kes, yapıştır. Yapıştırılan nesneler imlecin olduğu yere gelir.</li>
               <li><kbd>Ctrl+D</kbd> ya da panelden <b>Çoğalt</b>: seçileni hemen yanına kopyalar.</li>
               <li>Başka bir tahtaya da kopyalayıp yapıştırabilirsin.</li>
+              <li><b>Makas</b> (<kbd>S</kbd>): bir çizimin yalnızca bir parçasını almak için o parçanın etrafına kement çiz. Kementin içinden geçen çizgiler kement sınırından kesilir ve içeride kalan parçalar seçilir; sonra <kbd>Ctrl+X</kbd> ile kes, <kbd>Ctrl+C</kbd> ile kopyala, sürükleyip ayır ya da <kbd>Delete</kbd> ile sil. <kbd>Ctrl+Z</kbd> kesilen çizgileri yeniden birleştirir. Resim, metin, not ve dolgulu şekiller kesilmez; kementin içindeyse bütün olarak seçilir.</li>
             </ul>
 
             <h3>Sıralama ve silme</h3>
@@ -637,7 +647,7 @@
             <ul>
               <li>Ekle grubundan ekle; eksenler kareli arka planla hizalıdır (1 birim = 1 kare).</li>
               <li>Paneldeki kutuya fonksiyonu yazıp <kbd>Enter</kbd>: <code>x^2 - 2x - 3</code>, <code>2sin x</code>, <code>1/x</code>, <code>√(x+1)</code>, <code>ln x</code>, <code>e^x</code>, mutlak değer için <code>abs(x)</code>. Örtük çarpma (<code>2x</code>, <code>3(x-1)</code>), <code>π</code>, ondalık virgül desteklenir; açılar radyandır.</li>
-              <li>Her grafik ayrı renkte çizilir ve sol üstte yazar; panelde adına tıklayınca kaldırılır. <b>Izgara</b> birim kareleri gösterir.</li>
+              <li>Her grafik ayrı renkte çizilir ve sol üstte yazar; panelde adına tıklayınca denklem yerinde düzenlenir, <kbd>Enter</kbd> ile (ya da kutudan çıkınca) grafik yenilenir, <kbd>Esc</kbd> vazgeçer; yanındaki <b>×</b> grafiği kaldırır. <b>Izgara</b> birim kareleri gösterir.</li>
             </ul>
 
             <h3>Formüller</h3>

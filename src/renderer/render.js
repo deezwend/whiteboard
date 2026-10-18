@@ -132,11 +132,29 @@ function drawSegments(ctx, el, style, widths = null) {
 }
 
 const GALAXY_COLORS = [[27, 31, 107], [75, 43, 179], [162, 59, 214], [47, 111, 224]];
+const galaxyPalettes = new Map();
 
-function galaxyColor(dist) {
-  const t = (dist / 90) % GALAXY_COLORS.length;
-  const a = GALAXY_COLORS[Math.floor(t)];
-  const b = GALAXY_COLORS[(Math.floor(t) + 1) % GALAXY_COLORS.length];
+// el.galaxy (#rrggbb) varsa o renkten koyu → ana renk → açık → komşu ton geçişli bir palet
+// türetilir; yoksa klasik uzay renkleri kullanılır.
+function galaxyPalette(el) {
+  const hex = el.galaxy;
+  if (!hex || !/^#[0-9a-f]{6}$/i.test(hex)) return GALAXY_COLORS;
+  let pal = galaxyPalettes.get(hex);
+  if (!pal) {
+    const c = [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16));
+    const mix = (t, f) => c.map((v, k) => Math.round(v + (t[k] - v) * f));
+    // Ana rengin kanallarını kaydırarak yakın bir ton elde edilir (örn. mor → mavi).
+    const shifted = [c[2], c[0], c[1]];
+    pal = [mix([8, 8, 20], 0.7), c, mix([255, 255, 255], 0.3), mix(shifted, 0.45)];
+    galaxyPalettes.set(hex, pal);
+  }
+  return pal;
+}
+
+function galaxyColor(dist, pal = GALAXY_COLORS) {
+  const t = (dist / 90) % pal.length;
+  const a = pal[Math.floor(t)];
+  const b = pal[(Math.floor(t) + 1) % pal.length];
   const f = t - Math.floor(t);
   const c = a.map((v, k) => Math.round(v + (b[k] - v) * f));
   return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
@@ -303,7 +321,7 @@ function drawStroke(ctx, el) {
   const brush = el.highlighter ? 'normal' : el.brush || 'normal';
   ctx.lineCap = brush === 'tape' ? 'butt' : 'round';
   ctx.lineJoin = 'round';
-  const color = brush === 'rainbow' ? 'hsl(0, 90%, 55%)' : brush === 'galaxy' ? galaxyColor(0) : el.color;
+  const color = brush === 'rainbow' ? 'hsl(0, 90%, 55%)' : brush === 'galaxy' ? galaxyColor(0, galaxyPalette(el)) : el.color;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   // Dışarıdan verilen saydamlık (geçici fosforlu kalemin sönmesi) korunur.
@@ -330,7 +348,8 @@ function drawStroke(ctx, el) {
   } else if (brush === 'rainbow') {
     drawSegments(ctx, el, (i, d) => { ctx.strokeStyle = `hsl(${(d * 0.6) % 360}, 90%, 55%)`; });
   } else if (brush === 'galaxy') {
-    drawSegments(ctx, el, (i, d) => { ctx.strokeStyle = galaxyColor(d); });
+    const pal = galaxyPalette(el);
+    drawSegments(ctx, el, (i, d) => { ctx.strokeStyle = galaxyColor(d, pal); });
     drawGalaxyStars(ctx, el);
   } else if (brush === 'tape' || brush === 'dashed' || brush === 'dashedarrow' || !el.pressure || el.highlighter) {
     ctx.lineWidth = el.width;
@@ -374,6 +393,14 @@ function roundRectPath(ctx, x, y, w, h, r) {
 
 export function drawElement(ctx, el, hideText = false) {
   ctx.save();
+  if (el.rot) {
+    // Döndürülmüş kutu öğesi: merkezi etrafında döndürülüp düz hâli gibi çizilir.
+    const b = normRect(el.x, el.y, el.w, el.h);
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(el.rot);
+    ctx.translate(-cx, -cy);
+  }
   switch (el.type) {
     case 'stroke':
       drawStroke(ctx, el);

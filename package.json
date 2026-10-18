@@ -1,6 +1,6 @@
 {
   "name": "beyaz-tahta",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Kişisel sonsuz beyaz tahta uygulaması",
   "main": "src/main/main.js",
   "scripts": {

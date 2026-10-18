@@ -272,11 +272,13 @@ function listBoardFiles(dir) {
 // ---------- IPC ----------
 
 ipcMain.handle('board:loadInitial', () => {
-  const candidates = [fileFromArgv(process.argv), readSettings().lastPath];
+  const argFile = fileFromArgv(process.argv);
+  const candidates = [argFile, readSettings().lastPath];
   for (const p of candidates) {
     if (p && fs.existsSync(p)) {
       const res = openBoardFile(p);
-      if (res) return res;
+      // fromArgv: dosyaya çift tıklanarak açıldı; aksi halde renderer galeriyi gösterir.
+      if (res) return { ...res, fromArgv: p === argFile };
     }
   }
   setCurrentPath(newBoardPath());
