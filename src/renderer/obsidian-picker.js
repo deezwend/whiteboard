@@ -9,10 +9,12 @@
 // Notlar/başlıklar/blok önizlemeleri kullanıcı içeriğidir; bu yüzden
 // innerHTML yerine her zaman textContent/createElement kullanılır.
 
+import { t } from './i18n.js';
+
 const LS_WIDTH = 'obsidianPickerWidth';
 const LS_LAST = 'obsidianPickerLast';
 // [etiket, piksel] — api.obsidianRender'a gönderilen CSS genişliği.
-const WIDTHS = [['Dar', 480], ['Orta', 640], ['Geniş', 860]];
+const WIDTHS = [[t('Dar'), 480], [t('Orta'), 640], [t('Geniş'), 860]];
 const DEFAULT_WIDTH = 640;
 const MAX_ROWS = 300;
 const RENDER_DEBOUNCE = 150;
@@ -137,7 +139,7 @@ export function openObsidianPicker(api) {
   const root = mk('div');
   root.id = 'obsidianPicker';
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', "Obsidian'dan ekle");
+  root.setAttribute('aria-label', t("Obsidian'dan ekle"));
   document.body.appendChild(root);
 
   const card = mk('div', 'panel obsidian-card');
@@ -145,11 +147,11 @@ export function openObsidianPicker(api) {
 
   // Başlık satırı
   const head = mk('div', 'obsidian-head');
-  head.appendChild(mk('h2', null, "Obsidian'dan ekle"));
+  head.appendChild(mk('h2', null, t("Obsidian'dan ekle")));
   const vaultSel = mk('select', 'obsidian-vault');
-  vaultSel.title = 'Vault seç';
+  vaultSel.title = t('Vault seç');
   head.appendChild(vaultSel);
-  const closeBtn = mk('button', 'chip', 'Kapat');
+  const closeBtn = mk('button', 'chip', t('Kapat'));
   closeBtn.type = 'button';
   head.appendChild(closeBtn);
   card.appendChild(head);
@@ -162,7 +164,7 @@ export function openObsidianPicker(api) {
   const notesCol = mk('div', 'obsidian-col obsidian-notes');
   const search = mk('input', 'obsidian-search');
   search.type = 'search';
-  search.placeholder = 'Not ara…';
+  search.placeholder = t('Not ara…');
   search.spellcheck = false;
   search.autocomplete = 'off';
   notesCol.appendChild(search);
@@ -184,7 +186,7 @@ export function openObsidianPicker(api) {
     const b = mk('button', 'chip', label);
     b.type = 'button';
     b.dataset.width = String(w);
-    b.title = w + ' piksel';
+    b.title = t('{n} piksel', { n: w });
     b.addEventListener('click', () => setWidth(w));
     widthBtns.push(b);
     widthRow.appendChild(b);
@@ -192,7 +194,7 @@ export function openObsidianPicker(api) {
   previewCol.appendChild(widthRow);
   const previewBox = mk('div', 'obsidian-preview msg');
   previewCol.appendChild(previewBox);
-  const addBtn = mk('button', 'chip obsidian-add', 'Tahtaya ekle');
+  const addBtn = mk('button', 'chip obsidian-add', t('Tahtaya ekle'));
   addBtn.type = 'button';
   addBtn.disabled = true;
   previewCol.appendChild(addBtn);
@@ -200,9 +202,9 @@ export function openObsidianPicker(api) {
 
   // Vault yokken gösterilen orta bloğu
   const none = mk('div', 'obsidian-none hidden');
-  const noneMsg = mk('p', 'muted obsidian-msg', "Obsidian vault'u bulunamadı.");
+  const noneMsg = mk('p', 'muted obsidian-msg', t("Obsidian vault'u bulunamadı."));
   none.appendChild(noneMsg);
-  const pickBtn = mk('button', 'chip', 'Vault klasörünü seç…');
+  const pickBtn = mk('button', 'chip', t('Vault klasörünü seç…'));
   pickBtn.type = 'button';
   none.appendChild(pickBtn);
   card.appendChild(none);
@@ -354,7 +356,7 @@ export function openObsidianPicker(api) {
     if (picker !== state) return;
 
     if (!res || res.error) {
-      showNoVaults(res && res.error ? res.error : "Obsidian vault'u bulunamadı.");
+      showNoVaults(res && res.error ? res.error : t("Obsidian vault'u bulunamadı."));
       return;
     }
 
@@ -383,7 +385,7 @@ export function openObsidianPicker(api) {
     }
     const pick = document.createElement('option');
     pick.value = '__pick';
-    pick.textContent = 'Başka klasör seç…';
+    pick.textContent = t('Başka klasör seç…');
     vaultSel.appendChild(pick);
     if (current) vaultSel.value = current;
   }
@@ -394,7 +396,7 @@ export function openObsidianPicker(api) {
     vaultSel.disabled = true;
     body.classList.add('hidden');
     none.classList.remove('hidden');
-    noneMsg.textContent = errorText || "Obsidian vault'u bulunamadı.";
+    noneMsg.textContent = errorText || t("Obsidian vault'u bulunamadı.");
     pickBtn.focus();
   }
 
@@ -458,7 +460,7 @@ export function openObsidianPicker(api) {
     state.noteEls = [];
 
     if (state.notesLoading) {
-      noteList.appendChild(mk('p', 'muted obsidian-msg', 'Yükleniyor…'));
+      noteList.appendChild(mk('p', 'muted obsidian-msg', t('Yükleniyor…')));
       return;
     }
     if (state.notesError) {
@@ -469,11 +471,11 @@ export function openObsidianPicker(api) {
     state.shown = filterNotes(state.notes, state.query);
 
     if (!state.notes.length) {
-      noteList.appendChild(mk('p', 'muted obsidian-msg', 'Not bulunamadı.'));
+      noteList.appendChild(mk('p', 'muted obsidian-msg', t('Not bulunamadı.')));
       return;
     }
     if (!state.shown.length) {
-      noteList.appendChild(mk('p', 'muted obsidian-msg', 'Aramaya uyan not yok.'));
+      noteList.appendChild(mk('p', 'muted obsidian-msg', t('Aramaya uyan not yok.')));
       return;
     }
 
@@ -590,11 +592,11 @@ export function openObsidianPicker(api) {
     state.sectionByKey = new Map();
 
     if (!state.rel) {
-      outlineList.appendChild(mk('p', 'muted obsidian-msg', 'Bir not seç.'));
+      outlineList.appendChild(mk('p', 'muted obsidian-msg', t('Bir not seç.')));
       return;
     }
     if (state.outlineLoading) {
-      outlineList.appendChild(mk('p', 'muted obsidian-msg', 'Yükleniyor…'));
+      outlineList.appendChild(mk('p', 'muted obsidian-msg', t('Yükleniyor…')));
       return;
     }
     if (state.outlineError) {
@@ -604,17 +606,17 @@ export function openObsidianPicker(api) {
 
     const out = state.outline || {};
     // İlk satır her zaman notun tamamı.
-    addEntry({ kind: 'whole' }, 'Notun tamamı', 0, null);
+    addEntry({ kind: 'whole' }, t('Notun tamamı'), 0, null);
 
     for (const h of out.headings || []) {
       const section = { kind: 'heading', path: h.path, line: h.line };
       const level = Number(h.level) || 1;
-      addEntry(section, h.text || '(başlıksız)', (level - 1) * 14, level);
+      addEntry(section, h.text || t('(başlıksız)'), (level - 1) * 14, level);
     }
 
     const blocks = out.blocks || [];
     if (blocks.length) {
-      outlineList.appendChild(mk('div', 'muted obsidian-label', 'Bloklar'));
+      outlineList.appendChild(mk('div', 'muted obsidian-label', t('Bloklar')));
       for (const b of blocks) {
         const section = { kind: 'block', id: b.id };
         const row = addEntry(section, `^${b.id} — ${b.preview || ''}`, 0, null);
@@ -691,7 +693,7 @@ export function openObsidianPicker(api) {
     if (!res || res.error) {
       state.result = null;
       state.previewState = 'error';
-      state.previewError = (res && res.error) || 'Önizleme oluşturulamadı.';
+      state.previewError = (res && res.error) || t('Önizleme oluşturulamadı.');
       renderPreview();
       return;
     }
@@ -711,10 +713,10 @@ export function openObsidianPicker(api) {
     previewBox.textContent = '';
     if (state.previewState === 'loading') {
       previewBox.classList.add('msg');
-      previewBox.appendChild(mk('p', 'muted obsidian-msg', 'Hazırlanıyor…'));
+      previewBox.appendChild(mk('p', 'muted obsidian-msg', t('Hazırlanıyor…')));
     } else if (state.previewState === 'error') {
       previewBox.classList.add('msg');
-      previewBox.appendChild(mk('p', 'obsidian-error', state.previewError || 'Önizleme oluşturulamadı.'));
+      previewBox.appendChild(mk('p', 'obsidian-error', state.previewError || t('Önizleme oluşturulamadı.')));
     } else if (state.previewState === 'ready' && state.result) {
       previewBox.classList.remove('msg');
       const img = document.createElement('img');
@@ -724,7 +726,7 @@ export function openObsidianPicker(api) {
       previewBox.appendChild(img);
     } else {
       previewBox.classList.add('msg');
-      previewBox.appendChild(mk('p', 'muted obsidian-msg', 'Önizleme için bir not ve bölüm seç.'));
+      previewBox.appendChild(mk('p', 'muted obsidian-msg', t('Önizleme için bir not ve bölüm seç.')));
     }
     addBtn.disabled = !(state.previewState === 'ready' && state.result);
   }

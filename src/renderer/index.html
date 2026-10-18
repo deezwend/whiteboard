@@ -19,7 +19,7 @@
       <button class="tool" data-tool="select" title="Seç">
         <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg>
       </button>
-      <button class="tool" data-tool="cut" title="Makas — bir parçanın etrafını çiz: içinden geçen çizgiler kesilir, parça seçilir (Ctrl+X kes, Ctrl+C kopyala)">
+      <button class="tool" data-tool="cut" title="Makas — bir parçanın etrafına dikdörtgen çiz: içinden geçen çizgiler kesilir, parça seçilir (Ctrl+X kes, Ctrl+C kopyala)">
         <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.6 7.6L20 18M8.6 16.4L20 6"/></svg>
       </button>
     </div>
@@ -210,6 +210,11 @@
       <button class="chip" data-theme-mode="light">Açık</button>
       <button class="chip" data-theme-mode="dark">Koyu</button>
       <button class="chip" data-theme-mode="system">Sistem</button>
+    </div>
+    <div class="menu-label">Dil / Language</div>
+    <div class="row" id="langRow">
+      <button class="chip" data-lang="tr">Türkçe</button>
+      <button class="chip" data-lang="en">English</button>
     </div>
     <hr />
     <button data-cmd="help">Rehber ve kısayollar <kbd>F1</kbd></button>
@@ -456,7 +461,7 @@
               <li><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd>: kopyala, kes, yapıştır. Yapıştırılan nesneler imlecin olduğu yere gelir.</li>
               <li><kbd>Ctrl+D</kbd> ya da panelden <b>Çoğalt</b>: seçileni hemen yanına kopyalar.</li>
               <li>Başka bir tahtaya da kopyalayıp yapıştırabilirsin.</li>
-              <li><b>Makas</b> (<kbd>S</kbd>): bir çizimin yalnızca bir parçasını almak için o parçanın etrafına kement çiz. Kementin içinden geçen çizgiler kement sınırından kesilir ve içeride kalan parçalar seçilir; sonra <kbd>Ctrl+X</kbd> ile kes, <kbd>Ctrl+C</kbd> ile kopyala, sürükleyip ayır ya da <kbd>Delete</kbd> ile sil. <kbd>Ctrl+Z</kbd> kesilen çizgileri yeniden birleştirir. Resim, metin, not ve dolgulu şekiller kesilmez; kementin içindeyse bütün olarak seçilir.</li>
+              <li><b>Makas</b> (<kbd>S</kbd>): bir çizimin yalnızca bir parçasını almak için o parçanın etrafına sürükleyerek dikdörtgen çiz. Dikdörtgenin içinden geçen çizgiler dikdörtgenin sınırından kesilir ve içeride kalan parçalar seçilir; sonra <kbd>Ctrl+X</kbd> ile kes, <kbd>Ctrl+C</kbd> ile kopyala, sürükleyip ayır ya da <kbd>Delete</kbd> ile sil. <kbd>Ctrl+Z</kbd> kesilen çizgileri yeniden birleştirir. Resim, metin, not ve dolgulu şekiller kesilmez; dikdörtgenin içindeyse bütün olarak seçilir.</li>
             </ul>
 
             <h3>Sıralama ve silme</h3>
@@ -483,7 +488,7 @@
             <ul>
               <li>Bir resim (PDF sayfası, ekran görüntüsü) seçiliyken panelden <b>Kırp</b>'a bas ya da resme <b>çift tıkla</b>.</li>
               <li>Beyaz çerçevenin kenar ve köşelerini sürükle, içinden tutup taşı. Dışarıda kalan kısım karartılır.</li>
-              <li><kbd>Enter</kbd> ya da <b>Uygula</b> kırpar, <kbd>Esc</kbd> ya da <b>Vazgeç</b> iptal eder. Kırpılan kısım dosyadan çıkar (tahta küçülür); <kbd>Ctrl+Z</kbd> resmi eski hâline getirir.</li>
+              <li><kbd>Enter</kbd> ya da <b>Uygula</b> kırpar, <b>Sıfırla</b> çerçeveyi resmin tamamına döndürür, <kbd>Esc</kbd> ya da <b>Vazgeç</b> iptal eder. Kırpılan kısım dosyadan çıkar (tahta küçülür); <kbd>Ctrl+Z</kbd> resmi eski hâline getirir.</li>
             </ul>
 
             <h3>Geri al / yinele</h3>
@@ -591,8 +596,8 @@
             <h3>Arka plan</h3>
             <p>Menüden (☰) <b>Arka plan deseni</b>: Boş, Kareli, Noktalı, Çizgili. <b>Arka plan rengi</b>: hazır renkler ya da özel renk seçici. Seçim tahtayla birlikte saklanır, her tahtanın arka planı ayrı olabilir.</p>
 
-            <h3>Tema</h3>
-            <p>Menüden <b>Açık</b>, <b>Koyu</b> ya da <b>Sistem</b> (Windows ayarını izler) seç. Tema bu bilgisayara özeldir, tahtanın arka planından bağımsızdır.</p>
+            <h3>Tema ve dil</h3>
+            <p>Menüden <b>Açık</b>, <b>Koyu</b> ya da <b>Sistem</b> (Windows ayarını izler) seç. Tema bu bilgisayara özeldir, tahtanın arka planından bağımsızdır. Arayüz dili (<b>Türkçe</b> / <b>English</b>) aynı menüden ya da <b>Görünüm → Dil / Language</b> ile seçilir.</p>
 
             <h3>PNG olarak dışa aktarma <kbd>Ctrl+E</kbd></h3>
             <ul>
@@ -624,7 +629,7 @@
             <p>Cevabın ya da formülün üstüne sürükleyerek desenli bir bant çek; altı tamamen kapanır. Kendini sınamak için:</p>
             <ul>
               <li>Banda <b>kalemle dokun</b> (ya da bant aracıyla tıkla, Seç aracıyla çift tıkla): bant açılır, yerinde kesikli bir çerçeve kalır.</li>
-              <li>Tekrar kapatmak için bant aracıyla tıkla ya da Seç aracıyla çift tıkla. Panelde <b>Hepsini kapat</b> / <b>Hepsini aç</b> var.</li>
+              <li>Tekrar kapatmak için bant aracıyla tıkla ya da Seç aracıyla çift tıkla. Panelde <b>Hepsini kapat</b> / <b>Hepsini aç</b>, menüde <b>Bütün bantları kapat</b> var.</li>
               <li>Tahta her açıldığında bütün bantlar kapalı gelir.</li>
             </ul>
 

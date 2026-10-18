@@ -4,9 +4,11 @@ const fs = require('fs');
 const crypto = require('crypto');
 const obsidian = require('./obsidian');
 const mdrender = require('./mdrender');
+const i18n = require('./i18n');
+const { L } = i18n;
 
 const FILE_EXT = 'tahta';
-const BOARD_FILTERS = [{ name: 'Beyaz Tahta', extensions: [FILE_EXT] }];
+const BOARD_FILTERS = [{ get name() { return L('Beyaz Tahta'); }, extensions: [FILE_EXT] }];
 const THEMES = ['light', 'dark', 'system'];
 
 let win = null;
@@ -72,7 +74,7 @@ function boardToOpenIn(dir) {
 
 // Vault'a geçer ve oradaki tahtayı açar; tahta yoksa (kaydedilince oluşacak) yeni boş tahta.
 function openVault(dir) {
-  if (!fs.existsSync(dir)) return { error: 'Bu klasör bulunamadı (sürücü bağlı olmayabilir).' };
+  if (!fs.existsSync(dir)) return { error: L('Bu klasör bulunamadı (sürücü bağlı olmayabilir).') };
   setVault(dir);
   const p = boardToOpenIn(dir);
   const opened = p && openBoardFile(p);
@@ -106,7 +108,7 @@ function timeStamp() {
 }
 
 function newBoardPath() {
-  return path.join(boardsDir(), `Tahta ${timeStamp()}.${FILE_EXT}`);
+  return path.join(boardsDir(), `${L('Tahta {zaman}', { zaman: timeStamp() })}.${FILE_EXT}`);
 }
 
 function isBoardFile(p) {
@@ -192,7 +194,7 @@ function saveCurrent(json) {
   let conflict = false;
   if (changedOnDisk(currentPath)) {
     const base = path.basename(currentPath, '.' + FILE_EXT);
-    setCurrentPath(path.join(path.dirname(currentPath), `${base} (çakışma ${timeStamp()}).${FILE_EXT}`));
+    setCurrentPath(path.join(path.dirname(currentPath), `${L('{ad} (çakışma {zaman})', { ad: base, zaman: timeStamp() })}.${FILE_EXT}`));
     conflict = true;
   }
   writeBoard(currentPath, json);
@@ -229,8 +231,8 @@ function openBoardFile(p) {
 
 function updateTitle() {
   if (!win) return;
-  const name = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : 'Yeni tahta';
-  win.setTitle(`${name} — Beyaz Tahta`);
+  const name = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : L('Yeni tahta');
+  win.setTitle(`${name} — ${L('Beyaz Tahta')}`);
 }
 
 function fileFromArgv(argv) {
@@ -302,19 +304,19 @@ ipcMain.on('board:saveSync', (e, json) => {
 ipcMain.on('board:askUnsaved', (e) => {
   const r = dialog.showMessageBoxSync(win, {
     type: 'question',
-    buttons: ['Kaydet', 'Kaydetme', 'Vazgeç'],
+    buttons: [L('Kaydet'), L('Kaydetme'), L('Vazgeç')],
     defaultId: 0,
     cancelId: 2,
     noLink: true,
-    title: 'Kaydedilmemiş değişiklikler',
-    message: 'Tahtada kaydedilmemiş değişiklikler var. Kaydedilsin mi?',
+    title: L('Kaydedilmemiş değişiklikler'),
+    message: L('Tahtada kaydedilmemiş değişiklikler var. Kaydedilsin mi?'),
   });
   e.returnValue = ['save', 'discard', 'cancel'][r] || 'cancel';
 });
 
 ipcMain.handle('board:saveAs', async (_e, json) => {
   const res = await dialog.showSaveDialog(win, {
-    title: 'Tahtayı farklı kaydet',
+    title: L('Tahtayı farklı kaydet'),
     defaultPath: currentPath || newBoardPath(),
     filters: BOARD_FILTERS,
   });
@@ -327,14 +329,14 @@ ipcMain.handle('board:saveAs', async (_e, json) => {
 
 ipcMain.handle('board:open', async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Tahta aç',
+    title: L('Tahta aç'),
     defaultPath: boardsDir(),
     filters: BOARD_FILTERS,
     properties: ['openFile'],
   });
   if (res.canceled || !res.filePaths[0]) return null;
   const opened = openBoardFile(res.filePaths[0]);
-  if (!opened) dialog.showErrorBox('Açılamadı', 'Bu dosya okunamadı veya bozuk.');
+  if (!opened) dialog.showErrorBox(L('Açılamadı'), L('Bu dosya okunamadı veya bozuk.'));
   return opened;
 });
 
@@ -342,7 +344,7 @@ ipcMain.handle('board:open', async () => {
 ipcMain.handle('board:openPath', (_e, p) => {
   if (!isBoardFile(p)) return null;
   const opened = openBoardFile(p);
-  if (!opened) dialog.showErrorBox('Açılamadı', 'Bu dosya okunamadı veya bozuk.');
+  if (!opened) dialog.showErrorBox(L('Açılamadı'), L('Bu dosya okunamadı veya bozuk.'));
   return opened;
 });
 
@@ -395,9 +397,9 @@ ipcMain.handle('boards:list', () => {
 });
 
 ipcMain.handle('boards:rename', (_e, p, newName) => {
-  if (!isBoardFile(p) || !fs.existsSync(p)) return { error: 'Tahta bulunamadı.' };
+  if (!isBoardFile(p) || !fs.existsSync(p)) return { error: L('Tahta bulunamadı.') };
   const name = safeName(newName);
-  if (!name) return { error: 'Geçerli bir ad yaz.' };
+  if (!name) return { error: L('Geçerli bir ad yaz.') };
   const target = path.join(path.dirname(p), `${name}.${FILE_EXT}`);
   if (target === p) return { path: p };
   if (fs.existsSync(target) && !samePath(target, p)) return { error: 'Bu adda bir tahta zaten var.' };
@@ -414,12 +416,12 @@ ipcMain.handle('boards:delete', async (_e, p) => {
     // Bazı senkron klasörleri (ör. Google Drive sürücüsü) Windows çöp kutusunu desteklemez.
     const r = await dialog.showMessageBox(win, {
       type: 'warning',
-      buttons: ['Kalıcı olarak sil', 'Vazgeç'],
+      buttons: [L('Kalıcı olarak sil'), L('Vazgeç')],
       defaultId: 1,
       cancelId: 1,
-      title: 'Çöp kutusuna taşınamadı',
-      message: 'Bu tahta çöp kutusuna taşınamadı.',
-      detail: 'Kalıcı olarak silinsin mi? Google Drive klasöründeyse Drive kendi çöp kutusunda bir süre saklar.',
+      title: L('Çöp kutusuna taşınamadı'),
+      message: L('Bu tahta çöp kutusuna taşınamadı.'),
+      detail: L('Kalıcı olarak silinsin mi? Google Drive klasöründeyse Drive kendi çöp kutusunda bir süre saklar.'),
     });
     if (r.response !== 0) return { deleted: false };
     fs.unlinkSync(p);
@@ -437,7 +439,7 @@ ipcMain.handle('boards:delete', async (_e, p) => {
 // Bir klasörü vault olarak açar: tahtalar taşınmaz, o klasördeki tahtalarla çalışılır.
 ipcMain.handle('vaults:open', async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Vault olarak açılacak klasörü seç',
+    title: L('Vault olarak açılacak klasörü seç'),
     defaultPath: boardsDir(),
     properties: ['openDirectory', 'createDirectory'],
   });
@@ -449,27 +451,27 @@ ipcMain.handle('vaults:open', async () => {
 // Kaydetme penceresi hem konumu hem klasör adını tek adımda seçtirir.
 ipcMain.handle('vaults:create', async () => {
   const res = await dialog.showSaveDialog(win, {
-    title: 'Yeni vault oluştur — konumu seç ve klasöre ad ver',
-    defaultPath: path.join(path.dirname(boardsDir()), 'Yeni vault'),
-    buttonLabel: 'Oluştur',
+    title: L('Yeni vault oluştur — konumu seç ve klasöre ad ver'),
+    defaultPath: path.join(path.dirname(boardsDir()), L('Yeni vault')),
+    buttonLabel: L('Oluştur'),
     properties: ['createDirectory', 'showOverwriteConfirmation'],
   });
   if (res.canceled || !res.filePath) return null;
   const dir = res.filePath;
   try {
     if (fs.existsSync(dir)) {
-      if (!fs.statSync(dir).isDirectory()) return { error: 'Bu adla bir dosya zaten var.' };
+      if (!fs.statSync(dir).isDirectory()) return { error: L('Bu adla bir dosya zaten var.') };
     } else {
       fs.mkdirSync(dir, { recursive: true });
     }
   } catch (err) {
-    return { error: 'Klasör oluşturulamadı: ' + err.message };
+    return { error: L('Klasör oluşturulamadı: {hata}', { hata: err.message }) };
   }
   return openVault(dir);
 });
 
 ipcMain.handle('vaults:switch', (_e, dir) => {
-  if (typeof dir !== 'string' || !vaultList().some((v) => samePath(v, dir))) return { error: 'Vault bulunamadı.' };
+  if (typeof dir !== 'string' || !vaultList().some((v) => samePath(v, dir))) return { error: L('Vault bulunamadı.') };
   return openVault(dir);
 });
 
@@ -516,7 +518,7 @@ ipcMain.handle('obsidian:vaults', () => obsidianVaults());
 
 ipcMain.handle('obsidian:pickVault', async () => {
   const res = await dialog.showOpenDialog(win, {
-    title: 'Obsidian vault klasörünü seç',
+    title: L('Obsidian vault klasörünü seç'),
     properties: ['openDirectory'],
   });
   if (res.canceled || !res.filePaths[0]) return null;
@@ -534,24 +536,24 @@ ipcMain.handle('obsidian:setVault', (_e, dir) => {
 
 ipcMain.handle('obsidian:notes', (_e, dir) => {
   const v = knownObsidianVault(dir);
-  if (!v) return { error: 'Vault bulunamadı.' };
+  if (!v) return { error: L('Vault bulunamadı.') };
   return { notes: obsidian.listNotes(v) };
 });
 
 ipcMain.handle('obsidian:outline', (_e, dir, rel) => {
   const v = knownObsidianVault(dir);
   const abs = v && obsidianNotePath(v, rel);
-  if (!abs) return { error: 'Not bulunamadı.' };
+  if (!abs) return { error: L('Not bulunamadı.') };
   try {
     return obsidian.parseOutline(fs.readFileSync(abs, 'utf8'));
   } catch {
-    return { error: 'Not okunamadı.' };
+    return { error: L('Not okunamadı.') };
   }
 });
 
 ipcMain.handle('obsidian:render', (_e, opts) => {
   const v = knownObsidianVault(opts?.vault);
-  if (!v) return { error: 'Vault bulunamadı (sürücü bağlı olmayabilir).' };
+  if (!v) return { error: L('Vault bulunamadı (sürücü bağlı olmayabilir).') };
   return mdrender.renderSection({ vault: v, rel: opts.rel, section: opts.section, width: opts.width });
 });
 
@@ -568,7 +570,7 @@ ipcMain.handle('math:render', (_e, opts) => {
   const text = typeof opts?.text === 'string' ? opts.text.slice(0, 5000) : '';
   const fontSize = Math.min(400, Math.max(4, Number(opts?.fontSize) || 24));
   const color = /^#[0-9a-f]{6}$/i.test(opts?.color) ? opts.color : '#1f2328';
-  if (!text) return { error: 'Boş metin.' };
+  if (!text) return { error: L('Boş metin.') };
   return mdrender.renderMath({ text, fontSize, color });
 });
 
@@ -614,10 +616,10 @@ async function withPagesWindow(pages, landscape, run) {
 }
 
 ipcMain.handle('export:pdf', async (_e, pages, landscape) => {
-  if (!validPages(pages)) return { error: 'Geçersiz sayfa verisi.' };
-  const base = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : 'Tahta';
+  if (!validPages(pages)) return { error: L('Geçersiz sayfa verisi.') };
+  const base = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : L('Tahta');
   const res = await dialog.showSaveDialog(win, {
-    title: 'PDF olarak dışa aktar',
+    title: L('PDF olarak dışa aktar'),
     defaultPath: path.join(app.getPath('documents'), base + '.pdf'),
     filters: [{ name: 'PDF belgesi', extensions: ['pdf'] }],
   });
@@ -637,7 +639,7 @@ ipcMain.handle('export:pdf', async (_e, pages, landscape) => {
 });
 
 ipcMain.handle('export:print', async (_e, pages, landscape) => {
-  if (!validPages(pages)) return { error: 'Geçersiz sayfa verisi.' };
+  if (!validPages(pages)) return { error: L('Geçersiz sayfa verisi.') };
   try {
     return await withPagesWindow(pages, !!landscape, (wc) => new Promise((resolve) => {
       wc.print({ silent: false, printBackground: true, landscape: !!landscape, margins: { marginType: 'none' } }, (ok, reason) => {
@@ -651,9 +653,9 @@ ipcMain.handle('export:print', async (_e, pages, landscape) => {
 });
 
 ipcMain.handle('export:png', async (_e, dataUrl) => {
-  const base = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : 'Tahta';
+  const base = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : L('Tahta');
   const res = await dialog.showSaveDialog(win, {
-    title: 'Resim olarak dışa aktar',
+    title: L('Resim olarak dışa aktar'),
     defaultPath: path.join(app.getPath('pictures'), base + '.png'),
     filters: [{ name: 'PNG resmi', extensions: ['png'] }],
   });
@@ -683,6 +685,28 @@ ipcMain.handle('theme:set', (_e, mode) => {
   return next;
 });
 
+// ---------- Dil ----------
+
+// Kayıtlı bir tercih yoksa Windows dili Türkçe ise Türkçe, değilse İngilizce açılır.
+function initLang() {
+  const saved = readSettings().lang;
+  i18n.setLang(i18n.LANGS.includes(saved) ? saved : app.getLocale().toLowerCase().startsWith('tr') ? 'tr' : 'en');
+}
+
+// Preload sayfa yüklenirken senkron sorar; renderer metinleri bu dille kurulur.
+ipcMain.on('lang:get', (e) => {
+  e.returnValue = i18n.getLang();
+});
+
+// Renderer tahtayı kaydettikten sonra çağırır, ardından sayfayı yeniden yükler.
+ipcMain.handle('lang:set', (_e, l) => {
+  const next = i18n.setLang(l);
+  writeSettings({ lang: next });
+  buildMenu();
+  updateTitle();
+  return next;
+});
+
 // ---------- Menü ----------
 
 function send(cmd) {
@@ -692,42 +716,50 @@ function send(cmd) {
 function buildMenu() {
   const template = [
     {
-      label: 'Dosya',
+      label: L('Dosya'),
       submenu: [
-        { label: 'Tahtalarım', accelerator: 'CmdOrCtrl+G', click: () => send('gallery') },
-        { label: 'Yeni tahta', accelerator: 'CmdOrCtrl+N', click: () => send('new') },
-        { label: 'Aç…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
-        { label: 'Kaydet', accelerator: 'CmdOrCtrl+S', click: () => send('save') },
-        { label: 'Farklı kaydet…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('saveAs') },
+        { label: L('Tahtalarım'), accelerator: 'CmdOrCtrl+G', click: () => send('gallery') },
+        { label: L('Yeni tahta'), accelerator: 'CmdOrCtrl+N', click: () => send('new') },
+        { label: L('Aç…'), accelerator: 'CmdOrCtrl+O', click: () => send('open') },
+        { label: L('Kaydet'), accelerator: 'CmdOrCtrl+S', click: () => send('save') },
+        { label: L('Farklı kaydet…'), accelerator: 'CmdOrCtrl+Shift+S', click: () => send('saveAs') },
         { type: 'separator' },
-        { label: 'Resim olarak dışa aktar (PNG)…', accelerator: 'CmdOrCtrl+E', click: () => send('exportPng') },
-        { label: 'PDF olarak dışa aktar…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('exportPdf') },
-        { label: 'Yazdır…', accelerator: 'CmdOrCtrl+P', click: () => send('print') },
-        { label: "Obsidian'dan ekle… (B)", click: () => send('obsidian') },
-        { label: 'Obsidian bölümlerini yenile', click: () => send('obsidianRefreshAll') },
+        { label: L('Resim olarak dışa aktar (PNG)…'), accelerator: 'CmdOrCtrl+E', click: () => send('exportPng') },
+        { label: L('PDF olarak dışa aktar…'), accelerator: 'CmdOrCtrl+Shift+E', click: () => send('exportPdf') },
+        { label: L('Yazdır…'), accelerator: 'CmdOrCtrl+P', click: () => send('print') },
+        { label: L("Obsidian'dan ekle… (B)"), click: () => send('obsidian') },
+        { label: L('Obsidian bölümlerini yenile'), click: () => send('obsidianRefreshAll') },
         { type: 'separator' },
-        { label: 'Dosya konumunu göster', click: () => send('showFolder') },
-        { label: 'Yeni vault oluştur…', click: () => send('createVault') },
-        { label: 'Klasörü vault olarak aç…', click: () => send('openVault') },
+        { label: L('Dosya konumunu göster'), click: () => send('showFolder') },
+        { label: L('Yeni vault oluştur…'), click: () => send('createVault') },
+        { label: L('Klasörü vault olarak aç…'), click: () => send('openVault') },
         { type: 'separator' },
-        { label: 'Çıkış', role: 'quit' },
+        { label: L('Çıkış'), role: 'quit' },
       ],
     },
     {
-      label: 'Görünüm',
+      label: L('Görünüm'),
       submenu: [
-        { label: 'Yakınlaştır', accelerator: 'CmdOrCtrl+=', click: () => send('zoomIn') },
-        { label: 'Uzaklaştır', accelerator: 'CmdOrCtrl+-', click: () => send('zoomOut') },
-        { label: '%100', accelerator: 'CmdOrCtrl+0', click: () => send('zoomReset') },
-        { label: 'Tümünü sığdır', accelerator: 'CmdOrCtrl+1', click: () => send('zoomFit') },
+        { label: L('Yakınlaştır'), accelerator: 'CmdOrCtrl+=', click: () => send('zoomIn') },
+        { label: L('Uzaklaştır'), accelerator: 'CmdOrCtrl+-', click: () => send('zoomOut') },
+        { label: L('%100'), accelerator: 'CmdOrCtrl+0', click: () => send('zoomReset') },
+        { label: L('Tümünü sığdır'), accelerator: 'CmdOrCtrl+1', click: () => send('zoomFit') },
         { type: 'separator' },
-        { label: 'Tam ekran', role: 'togglefullscreen' },
-        { label: 'Geliştirici araçları', accelerator: 'F12', role: 'toggleDevTools' },
+        { label: L('Tam ekran'), role: 'togglefullscreen' },
+        { label: L('Geliştirici araçları'), accelerator: 'F12', role: 'toggleDevTools' },
+        { type: 'separator' },
+        {
+          // İki dilde de okunabilsin diye etiket sabittir.
+          label: 'Dil / Language',
+          submenu: [['tr', 'Türkçe'], ['en', 'English']].map(([code, label]) => ({
+            label, type: 'radio', checked: i18n.getLang() === code, click: () => send('lang:' + code),
+          })),
+        },
       ],
     },
     {
-      label: 'Yardım',
-      submenu: [{ label: 'Rehber ve kısayollar', accelerator: 'F1', click: () => send('help') }],
+      label: L('Yardım'),
+      submenu: [{ label: L('Rehber ve kısayollar'), accelerator: 'F1', click: () => send('help') }],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -772,6 +804,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     applyTheme(readSettings().theme);
+    initLang();
     buildMenu();
     createWindow();
   });

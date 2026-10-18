@@ -33,5 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   renderMath: (opts) => ipcRenderer.invoke('math:render', opts),
   getTheme: () => ipcRenderer.invoke('theme:get'),
   setTheme: (mode) => ipcRenderer.invoke('theme:set', mode),
+  lang: ipcRenderer.sendSync('lang:get'),
+  setLang: (l) => ipcRenderer.invoke('lang:set', l),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
 });

@@ -10,6 +10,7 @@ import { createRuler, rulerHit, nearEdge, projectOnEdge, snapAngle, drawRuler } 
 import { createProtractor, protractorHit, nearArc, setArm, drawProtractor, PROT_R } from './protractor.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
 import { openObsidianPicker } from './obsidian-picker.js';
+import { t, lang, locale } from './i18n.js';
 
 const api = window.api;
 const canvas = document.getElementById('board');
@@ -49,28 +50,28 @@ const GALAXY_CLASSIC_BG = 'linear-gradient(135deg, #1b1f6b, #a23bd6 55%, #2f6fe0
 // icon: paneldeki düğmede gösterilen küçük önizleme (SVG içeriği, viewBox 0 0 32 16).
 const BRUSH_WAVE = 'M3 11c4-7 8-7 13-1s9 6 13-2';
 const BRUSHES = [
-  { id: 'normal', label: 'Kalem', title: 'Düz kalem',
+  { id: 'normal', label: t('Kalem'), title: t('Düz kalem'),
     icon: `<path d="${BRUSH_WAVE}" stroke="currentColor" stroke-width="2.5"/>` },
-  { id: 'calligraphy', label: 'Kaligrafi', title: 'Eğik keskin uç: yöne göre incelip kalınlaşır',
+  { id: 'calligraphy', label: t('Kaligrafi'), title: t('Eğik keskin uç: yöne göre incelip kalınlaşır'),
     icon: '<path d="M3.4 6.4 4.3 5.5 5.2 4.8 6.3 4.0 7.6 3.2 8.9 2.6 10.2 2.2 11.4 2.1 12.4 2.3 13.4 2.8 14.4 3.5 15.3 4.3 16.3 5.3 17.2 6.2 18.1 7.1 19.0 8.0 20.0 8.8 20.8 9.4 21.6 10.0 22.3 10.4 23.0 10.8 23.5 11.0 24.1 11.0 24.7 10.7 25.6 10.0 26.6 9.2 27.5 8.3 28.4 7.3 29.4 6.4 28.6 7.1 27.7 8.0 26.8 9.0 25.9 9.9 24.9 10.7 24.0 11.5 22.8 12.3 21.5 13.0 20.2 13.6 18.9 13.9 17.8 13.8 16.7 13.5 15.8 13.0 14.8 12.2 13.9 11.4 13.0 10.4 12.0 9.5 11.1 8.6 10.2 7.8 9.3 7.0 8.4 6.4 7.6 5.9 7.0 5.4 6.4 5.1 5.8 5.0 5.2 5.1 4.5 5.5 3.6 6.3 2.6 7.1z" fill="currentColor" stroke="none"/>' },
-  { id: 'brushpen', label: 'Fırça kalem', title: 'Yavaş çizince kalın, hızlı çizince ince; uçları sivri',
+  { id: 'brushpen', label: t('Fırça kalem'), title: t('Yavaş çizince kalın, hızlı çizince ince; uçları sivri'),
     icon: '<path d="M3.2 6.9 4.7 6.7 5.6 6.2 6.4 5.6 7.1 5.2 7.8 5.1 8.5 5.4 8.9 5.9 9.3 6.6 9.7 7.3 10.5 7.8 11.5 8.3 12.7 8.8 13.9 9.5 14.9 10.4 15.8 11.4 16.6 12.5 17.6 13.6 18.7 14.5 20.2 15.0 21.8 14.7 23.1 14.0 24.1 13.0 25.1 12.1 26.1 11.3 27.1 10.4 28.0 9.5 28.9 8.5 29.2 6.9 28.8 6.6 27.3 6.9 26.2 7.7 25.4 8.6 24.5 9.5 23.6 10.0 22.7 10.2 21.9 10.1 21.4 9.6 21.1 9.4 20.7 9.3 20.0 9.3 19.1 9.2 18.0 8.8 17.1 8.1 16.3 7.1 15.6 5.9 14.9 4.7 14.1 3.5 13.0 2.6 11.6 2.1 10.1 2.0 8.7 2.3 7.5 2.6 6.3 3.0 5.2 3.4 4.1 4.1 3.2 5.1 2.8 6.6z" fill="currentColor" stroke="none"/>' },
-  { id: 'fountain', label: 'Dolma kalem', title: 'Hafifçe değişen kalınlıkta mürekkep',
+  { id: 'fountain', label: t('Dolma kalem'), title: t('Hafifçe değişen kalınlıkta mürekkep'),
     icon: '<path d="M3.4 7.2 4.6 6.7 5.6 6.2 6.5 5.8 7.2 5.5 7.9 5.3 8.5 5.3 9.1 5.4 9.7 5.7 10.5 6.2 11.3 6.8 12.2 7.6 13.1 8.4 14.0 9.4 15.0 10.3 15.9 11.2 17.0 12.1 18.0 12.8 19.2 13.3 20.4 13.6 21.7 13.7 22.9 13.4 24.1 13.0 25.2 12.3 26.2 11.5 27.2 10.6 28.1 9.5 28.8 8.4 29.4 7.2 28.6 6.3 27.3 6.9 26.2 7.7 25.2 8.5 24.3 9.2 23.5 9.8 22.7 10.3 22.1 10.6 21.5 10.7 20.9 10.7 20.2 10.5 19.5 10.2 18.8 9.7 17.9 9.0 17.0 8.2 16.1 7.3 15.2 6.3 14.2 5.4 13.2 4.5 12.2 3.7 11.1 3.0 9.9 2.6 8.7 2.3 7.4 2.4 6.2 2.7 5.1 3.3 4.1 4.1 3.2 5.1 2.6 6.3z" fill="currentColor" stroke="none"/>' },
-  { id: 'dashed', label: 'Kesikli', title: 'Kesik kesik çizgi',
+  { id: 'dashed', label: t('Kesikli'), title: t('Kesik kesik çizgi'),
     icon: `<path d="${BRUSH_WAVE}" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 3.5"/>` },
-  { id: 'arrow', label: 'Oklu', title: 'Çizginin sonuna ok ucu ekler',
+  { id: 'arrow', label: t('Oklu'), title: t('Çizginin sonuna ok ucu ekler'),
     icon: '<path d="M3 12c4-7 8-7 12-2s8 5 13-4M22.5 5.5L28 6l-1 5.5" stroke="currentColor" stroke-width="2.5"/>' },
-  { id: 'dashedarrow', label: 'Kesikli ok', title: 'Kesik kesik çizgi, sonunda ok ucu',
+  { id: 'dashedarrow', label: t('Kesikli ok'), title: t('Kesik kesik çizgi, sonunda ok ucu'),
     icon: '<path d="M3 12c4-7 8-7 12-2s8 5 13-4" stroke="currentColor" stroke-width="2.5" stroke-dasharray="3 3.5"/><path d="M22.5 5.5L28 6l-1 5.5" stroke="currentColor" stroke-width="2.5"/>' },
-  { id: 'rainbow', label: 'Gökkuşağı', title: 'Çizdikçe renk değiştirir', noColor: true,
+  { id: 'rainbow', label: t('Gökkuşağı'), title: t('Çizdikçe renk değiştirir'), noColor: true,
     icon: `<defs><linearGradient id="brushRainbow"><stop offset="0" stop-color="#f03e3e"/><stop offset=".25" stop-color="#fab005"/><stop offset=".5" stop-color="#40c057"/><stop offset=".75" stop-color="#228be6"/><stop offset="1" stop-color="#be4bdb"/></linearGradient></defs>
       <path d="${BRUSH_WAVE}" stroke="url(#brushRainbow)" stroke-width="3.5"/>` },
-  { id: 'galaxy', label: 'Galaksi', title: 'Yıldızlı uzay mürekkebi',
+  { id: 'galaxy', label: t('Galaksi'), title: t('Yıldızlı uzay mürekkebi'),
     icon: `<defs><linearGradient id="brushGalaxy"><stop offset="0" stop-color="#1b1f6b"/><stop offset=".5" stop-color="#a23bd6"/><stop offset="1" stop-color="#2f6fe0"/></linearGradient></defs>
       <path d="${BRUSH_WAVE}" stroke="url(#brushGalaxy)" stroke-width="4.5"/>
       <g fill="#fff" stroke="none"><circle cx="6.5" cy="6.6" r=".7"/><circle cx="12" cy="5.4" r=".6"/><circle cx="17" cy="10.4" r=".7"/><circle cx="23" cy="10.6" r=".6"/><circle cx="27.5" cy="6.4" r=".6"/></g>` },
-  { id: 'tape', label: 'Bant', title: 'Desenli yapışkan bant (washi)',
+  { id: 'tape', label: t('Bant'), title: t('Desenli yapışkan bant (washi)'),
     icon: '<path d="M2 11.5L30 4.5" stroke="currentColor" stroke-width="7" stroke-linecap="butt" opacity=".75"/><path d="M2 11.5L30 4.5" stroke="#fff" stroke-width="7" stroke-linecap="butt" stroke-dasharray="1.5 2.5" opacity=".5"/>' },
 ];
 const FONT_SIZES = [16, 24, 36, 56, 80];
@@ -320,8 +321,8 @@ function setSaveState(text) {
 function scheduleSave() {
   dirty = true;
   clearTimeout(saveTimer);
-  if (!autoSave) return setSaveState('Kaydedilmedi');
-  setSaveState('Kaydediliyor…');
+  if (!autoSave) return setSaveState(t('Kaydedilmedi'));
+  setSaveState(t('Kaydediliyor…'));
   saveTimer = setTimeout(saveNow, 700);
 }
 
@@ -330,7 +331,7 @@ function setAutoSave(v) {
   savePrefs();
   updateAutoSaveUI();
   if (dirty) scheduleSave(); // açılınca bekleyen değişiklikler hemen kaydedilir
-  toast(v ? 'Otomatik kaydetme açık' : 'Otomatik kaydetme kapalı — Ctrl+S ile kaydet');
+  toast(v ? t('Otomatik kaydetme açık') : t('Otomatik kaydetme kapalı — Ctrl+S ile kaydet'));
 }
 
 // Öğrenci modu: açıölçer, pergel, gizleme bandı, koordinat sistemi, kilitleme, formüller, PDF ve
@@ -339,7 +340,7 @@ function setStudentMode(v) {
   studentMode = v;
   savePrefs();
   applyStudentMode();
-  toast(v ? 'Öğrenci modu açık' : 'Öğrenci modu kapalı');
+  toast(v ? t('Öğrenci modu açık') : t('Öğrenci modu kapalı'));
 }
 
 function applyStudentMode() {
@@ -364,7 +365,7 @@ function applyStudentMode() {
 
 function studentOnly() {
   if (studentMode) return true;
-  toast('Bu özellik Öğrenci modunda kullanılabilir — menüden (☰) aç');
+  toast(t('Bu özellik Öğrenci modunda kullanılabilir — menüden (☰) aç'));
   return false;
 }
 
@@ -393,15 +394,18 @@ async function saveNow() {
   dirty = false;
   try {
     const res = await api.save(serialize());
-    if (!dirty) setSaveState('Kaydedildi');
-    if (res?.conflict) toast('Tahta başka bir cihazda değişmiş; senin sürümün ayrı bir kopya olarak kaydedildi');
+    if (!dirty) setSaveState(t('Kaydedildi'));
+    if (res?.conflict) toast(t('Tahta başka bir cihazda değişmiş; senin sürümün ayrı bir kopya olarak kaydedildi'));
   } catch {
     dirty = true;
-    setSaveState('Kaydedilemedi!');
+    setSaveState(t('Kaydedilemedi!'));
   }
 }
 
+// Dil değiştirmek için sayfa yeniden yüklenirken (setLanguage) kaydetme sorusu tekrarlanmaz.
+let reloadingForLang = false;
 window.addEventListener('beforeunload', (e) => {
+  if (reloadingForLang) return; // leaveBoard kaydetti ya da kullanıcı "Kaydetme" dedi
   commitEditor();
   if (!dirty) return;
   if (!autoSave) {
@@ -438,7 +442,7 @@ function loadBoard(data) {
   compass = null;
   crop = null;
   dirty = false;
-  setSaveState('Kaydedildi');
+  setSaveState(t('Kaydedildi'));
   updateBgUI();
   changed(false);
   // Küçük resmi olmayan (eski) tahtalar galeride görünsün diye bir kez yeniden kaydedilir.
@@ -812,9 +816,9 @@ function toggleCover(el, show = !revealedCovers.has(el.id)) {
 
 function setAllCovers(show) {
   const covers = board.elements.filter((el) => el.type === 'cover');
-  if (!covers.length) return toast('Tahtada gizleme bandı yok');
+  if (!covers.length) return toast(t('Tahtada gizleme bandı yok'));
   for (const el of covers) toggleCover(el, show);
-  toast(show ? 'Bütün bantlar açıldı' : 'Bütün bantlar kapatıldı');
+  toast(show ? t('Bütün bantlar açıldı') : t('Bütün bantlar kapatıldı'));
 }
 
 function selectionIsEditable() {
@@ -1086,7 +1090,7 @@ canvas.addEventListener('pointerdown', (e) => {
       break;
 
     case 'cut':
-      drag = { kind: 'cutLasso', points: [[w.x, w.y]] };
+      drag = { kind: 'cutLasso', start: [w.x, w.y], points: [[w.x, w.y]] };
       break;
   }
   requestRender();
@@ -1317,8 +1321,9 @@ canvas.addEventListener('pointermove', (e) => {
     }
 
     case 'cutLasso': {
-      const last = drag.points[drag.points.length - 1];
-      if (Math.hypot(w.x - last[0], w.y - last[1]) * board.view.zoom >= 3) drag.points.push([w.x, w.y]);
+      // Makas dikdörtgen çizer: başlangıç köşesinden imlece kadar.
+      const [x0, y0] = drag.start;
+      drag.points = [[x0, y0], [w.x, y0], [w.x, w.y], [x0, w.y]];
       break;
     }
   }
@@ -1369,7 +1374,7 @@ function endPointer(e) {
     case 'compassSet':
       if (compass.r * board.view.zoom < 4) {
         compass = null;
-        toast('Pergel: merkezden dışarı doğru sürükleyerek yarıçapı belirle');
+        toast(t('Pergel: merkezden dışarı doğru sürükleyerek yarıçapı belirle'));
       }
       break;
     case 'compassArc':
@@ -1400,9 +1405,13 @@ function endPointer(e) {
     case 'lasso':
       updateProps();
       break;
-    case 'cutLasso':
-      cutWithLasso(d.points);
+    case 'cutLasso': {
+      // Tıklama ya da çok ince dikdörtgen kesme yapmaz.
+      const [x1, y1] = d.points[2] ?? d.start;
+      const tiny = 4 / board.view.zoom;
+      if (Math.abs(x1 - d.start[0]) >= tiny && Math.abs(y1 - d.start[1]) >= tiny) cutWithLasso(d.points);
       break;
+    }
   }
   updateCursor(e);
   requestRender();
@@ -1433,7 +1442,7 @@ function cutWithLasso(lasso) {
     } else if (!parts && insideLasso(el, lasso)) picked.push(el);
   }
   if (!picked.length) {
-    toast('Kementin içinde kesilecek bir şey yok');
+    toast(t('Dikdörtgenin içinde kesilecek bir şey yok'));
     return;
   }
   if (replacements.size) {
@@ -1444,7 +1453,7 @@ function cutWithLasso(lasso) {
   selection = new Set(picked.map((el) => el.id));
   if (replacements.size) changed();
   updateProps();
-  toast('Parça seçildi — Ctrl+X kes, Ctrl+C kopyala ya da sürükleyip taşı');
+  toast(t('Parça seçildi — Ctrl+X kes, Ctrl+C kopyala ya da sürükleyip taşı'));
 }
 
 // Elle çizilen şekli düzgün şekle çevirir. Ayrı bir geri alma adımı olduğu için
@@ -1468,7 +1477,7 @@ function convertToShape(el) {
   } else {
     board.elements[idx] = { id: newId(), color: el.color, width: el.width, ...shape };
   }
-  toast('Şekle dönüştürüldü — el çizimine dönmek için Ctrl+Z');
+  toast(t('Şekle dönüştürüldü — el çizimine dönmek için Ctrl+Z'));
 }
 
 function cancelDrag() {
@@ -1506,7 +1515,7 @@ canvas.addEventListener('dblclick', (e) => {
       selection = new Set([locked.id]);
       updateProps();
       requestRender();
-      toast('Kilitli nesne seçildi — panelden ya da Ctrl+L ile kilidini açabilirsin');
+      toast(t('Kilitli nesne seçildi — panelden ya da Ctrl+L ile kilidini açabilirsin'));
     }
   }
 });
@@ -1675,7 +1684,7 @@ function stepSearch(d) {
 function updateSearchCount() {
   const el = $('#searchCount');
   const n = search?.hits.length || 0;
-  el.textContent = !search ? '' : n ? `${search.i + 1} / ${n}` : 'Bulunamadı';
+  el.textContent = !search ? '' : n ? `${search.i + 1} / ${n}` : t('Bulunamadı');
   el.classList.toggle('none', !!search && !n);
 }
 
@@ -1743,13 +1752,13 @@ const CROP_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 function startCrop() {
   const el = selectedEls()[0];
   if (!el || el.type !== 'image' || el.locked) return;
-  if (el.rot) return toast('Döndürülmüş resim kırpılamaz — önce düz hâle getir');
+  if (el.rot) return toast(t('Döndürülmüş resim kırpılamaz — önce düz hâle getir'));
   const img = getImage(el.src);
-  if (!img.complete || !img.naturalWidth) return toast('Resim henüz yüklenmedi');
+  if (!img.complete || !img.naturalWidth) return toast(t('Resim henüz yüklenmedi'));
   crop = { id: el.id, r: { x: el.x, y: el.y, w: el.w, h: el.h } };
   updateProps();
   requestRender();
-  toast('Kırp: kenarları sürükle — Enter uygula, Esc vazgeç');
+  toast(t('Kırp: kenarları sürükle — Enter uygula, Esc vazgeç'));
 }
 
 function cancelCrop() {
@@ -1827,7 +1836,7 @@ function applyCrop() {
   el.src = c.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.92);
   Object.assign(el, r);
   changed();
-  toast('Resim kırpıldı — eski hâli için Ctrl+Z');
+  toast(t('Resim kırpıldı — eski hâli için Ctrl+Z'));
 }
 
 function drawCropOverlay() {
@@ -2009,7 +2018,7 @@ function drawCompass() {
     if (p) {
       ctx.fillStyle = 'rgba(74,124,240,0.9)';
       ctx.font = '12px "Segoe UI", sans-serif';
-      ctx.fillText('Merkezden sürükle', p.x + 14, p.y + 18);
+      ctx.fillText(t('Merkezden sürükle'), p.x + 14, p.y + 18);
     }
     return;
   }
@@ -2043,7 +2052,7 @@ function drawCompass() {
   ctx.beginPath();
   ctx.arc(c.x, c.y, 2, 0, Math.PI * 2);
   ctx.fill();
-  const label = 'r = ' + (compass.r / GRID_UNIT).toLocaleString('tr-TR', { maximumFractionDigits: 1 }) + ' kare';
+  const label = 'r = ' + t('{n} kare', { n: (compass.r / GRID_UNIT).toLocaleString(locale, { maximumFractionDigits: 1 }) });
   ctx.font = '600 12px "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
@@ -2395,7 +2404,7 @@ function updateProps() {
   }
   panel.classList.toggle('collapsed', propsUi.collapsed);
   const toggle = $('#propsToggle');
-  toggle.title = propsUi.collapsed ? 'Paneli göster' : 'Paneli gizle';
+  toggle.title = propsUi.collapsed ? t('Paneli göster') : t('Paneli gizle');
   let dotColor = c.colors ? v.color : c.noteColors ? v.noteColor : null;
   if (dotColor === 'classic') dotColor = GALAXY_CLASSIC_BG;
   const dot = toggle.querySelector('.tab-dot');
@@ -2404,8 +2413,8 @@ function updateProps() {
   const pin = $('#propsPin');
   pin.classList.toggle('on', propsUi.pinned);
   pin.title = propsUi.pinned
-    ? 'Sabit: panel yalnızca okla gizlenir (kapatınca çizerken kendiliğinden gizlenir)'
-    : 'Sabit değil: çizmeye başlayınca panel gizlenir (tıkla, sabitle)';
+    ? t('Sabit: panel yalnızca okla gizlenir (kapatınca çizerken kendiliğinden gizlenir)')
+    : t('Sabit değil: çizmeye başlayınca panel gizlenir (tıkla, sabitle)');
 
   const brushRow = $('#brushRow');
   brushRow.classList.toggle('hidden', !c.brushes);
@@ -2422,9 +2431,9 @@ function updateProps() {
     const custom = v.color != null && !c.colors.includes(v.color);
     colorRow.innerHTML = c.colors.map((col) => {
       const classic = col === 'classic';
-      return `<button class="swatch${col === v.color ? ' selected' : ''}" data-color="${col}" style="background:${classic ? GALAXY_CLASSIC_BG : col}" title="${classic ? 'Klasik galaksi' : col}"></button>`;
+      return `<button class="swatch${col === v.color ? ' selected' : ''}" data-color="${col}" style="background:${classic ? GALAXY_CLASSIC_BG : col}" title="${classic ? t('Klasik galaksi') : col}"></button>`;
     }).join('') +
-      `<label class="swatch custom${custom ? ' selected' : ''}" title="Özel renk"><input type="color" value="${/^#[0-9a-f]{6}$/i.test(v.color || '') ? v.color : '#000000'}" /></label>`;
+      `<label class="swatch custom${custom ? ' selected' : ''}" title="${t('Özel renk')}"><input type="color" value="${/^#[0-9a-f]{6}$/i.test(v.color || '') ? v.color : '#000000'}" /></label>`;
   }
 
   const noteRow = $('#noteColorRow');
@@ -2449,7 +2458,7 @@ function updateProps() {
   fontRow.classList.toggle('hidden', !c.font);
   if (c.font) {
     fontRow.innerHTML = FONT_SIZES.map((f) =>
-      `<button class="chip${f === v.fontSize ? ' selected' : ''}" data-font="${f}" title="Yazı boyutu ${f}">${f}</button>`,
+      `<button class="chip${f === v.fontSize ? ' selected' : ''}" data-font="${f}" title="${t('Yazı boyutu {n}', { n: f })}">${f}</button>`,
     ).join('');
   }
 
@@ -2471,13 +2480,13 @@ function updateProps() {
     const live = $('#fnList .fninline');
     if (!(fnEdit && live && Number(live.dataset.fnInline) === fnEdit.i)) {
       $('#fnList').innerHTML = (ax.fns || []).map((f, i) => (fnEdit?.i === i
-        ? `<span class="fnchip editing"><span class="chip fnedit"><span class="fndot" style="background:${f.color}"></span><input class="fninline" data-fn-inline="${i}" type="text" value="${escHtml(functionLabel(f.expr))}" spellcheck="false" autocomplete="off" title="Enter: kaydet — Esc: vazgeç" /></span></span>`
-        : `<span class="fnchip"><button class="chip fnedit" data-fn-edit="${i}" title="Denklemi düzenle"><span class="fndot" style="background:${f.color}"></span>${escHtml(functionLabel(f.expr))}</button><button class="chip fnremove" data-fn-remove="${i}" title="Bu grafiği kaldır">×</button></span>`),
+        ? `<span class="fnchip editing"><span class="chip fnedit"><span class="fndot" style="background:${f.color}"></span><input class="fninline" data-fn-inline="${i}" type="text" value="${escHtml(functionLabel(f.expr))}" spellcheck="false" autocomplete="off" title="${t('Enter: kaydet — Esc: vazgeç')}" /></span></span>`
+        : `<span class="fnchip"><button class="chip fnedit" data-fn-edit="${i}" title="${t('Denklemi düzenle')}"><span class="fndot" style="background:${f.color}"></span>${escHtml(functionLabel(f.expr))}</button><button class="chip fnremove" data-fn-remove="${i}" title="${t('Bu grafiği kaldır')}">×</button></span>`),
       ).join('');
     }
   }
   const lockChip = $('[data-arrange="lock"]');
-  lockChip.textContent = v.locked ? 'Kilidi aç' : 'Kilitle';
+  lockChip.textContent = v.locked ? t('Kilidi aç') : t('Kilitle');
   lockChip.classList.toggle('selected', !!v.locked);
   lockChip.classList.toggle('hidden', !studentMode && !v.locked);
   $('#arrangeRow').classList.toggle('hidden', !c.arrange);
@@ -2601,7 +2610,7 @@ $('#props').addEventListener('click', (e) => {
     propsUi.pinned = !propsUi.pinned;
     savePrefs();
     updateProps();
-    toast(propsUi.pinned ? 'Panel sabitlendi' : 'Panel çizerken kendiliğinden gizlenecek');
+    toast(propsUi.pinned ? t('Panel sabitlendi') : t('Panel çizerken kendiliğinden gizlenecek'));
   }
   else if (b.dataset.obsidian === 'refresh') refreshObsidian(selectedEls());
   else if (b.dataset.obsidian === 'open') openInObsidian(selectedEls()[0]);
@@ -2617,7 +2626,7 @@ $('#props').addEventListener('click', (e) => {
     styles.pen.toShape = !styles.pen.toShape;
     savePrefs();
     updateProps();
-    toast(styles.pen.toShape ? 'Şekil algılama açık' : 'Şekil algılama kapalı');
+    toast(styles.pen.toShape ? t('Şekil algılama açık') : t('Şekil algılama kapalı'));
   }
 });
 
@@ -2636,7 +2645,7 @@ function finishFnEdit(save) {
     const r = compileFunction(expr);
     if (r.error) {
       input.classList.add('invalid');
-      toast('Fonksiyon anlaşılamadı: ' + r.error);
+      toast(t('Fonksiyon anlaşılamadı: {hata}', { hata: r.error }));
       return false;
     }
     fnEdit = null;
@@ -2689,7 +2698,7 @@ function addFunction() {
   const r = compileFunction(expr);
   if (r.error) {
     input.classList.add('invalid');
-    return toast('Fonksiyon anlaşılamadı: ' + r.error);
+    return toast(t('Fonksiyon anlaşılamadı: {hata}', { hata: r.error }));
   }
   input.classList.remove('invalid');
   const fns = ax.fns || [];
@@ -2768,17 +2777,17 @@ function toggleLock() {
   if (lock) selection.clear();
   changed();
   toast(lock
-    ? (sel.length > 1 ? `${sel.length} nesne kilitlendi` : 'Kilitlendi') + ' — seçmek için çift tıkla'
-    : 'Kilit açıldı');
+    ? (sel.length > 1 ? t('{n} nesne kilitlendi', { n: sel.length }) : t('Kilitlendi')) + t(' — seçmek için çift tıkla')
+    : t('Kilit açıldı'));
 }
 
 function unlockAll() {
   const locked = board.elements.filter((el) => el.locked);
-  if (!locked.length) return toast('Tahtada kilitli nesne yok');
+  if (!locked.length) return toast(t('Tahtada kilitli nesne yok'));
   checkpoint();
   for (const el of locked) delete el.locked;
   changed();
-  toast(`${locked.length} nesnenin kilidi açıldı`);
+  toast(t('{n} nesnenin kilidi açıldı', { n: locked.length }));
 }
 
 function deleteSelection() {
@@ -2913,7 +2922,7 @@ function showInGroup(grp, target) {
   if (m.dataset.tool) main.dataset.tool = m.dataset.tool;
   else main.dataset.action = m.dataset.action;
   main.innerHTML = m.innerHTML + '<span class="caret"></span>';
-  main.title = m.title + ' — ' + grp.el.dataset.title + ': sağ tıkla veya basılı tut';
+  main.title = m.title + ' — ' + grp.el.dataset.title + t(': sağ tıkla veya basılı tut');
 }
 
 // Seçilen araç/eylem bir gruptaysa o grubun düğmesine geçirir.
@@ -2996,7 +3005,7 @@ function insertAxes() {
   setTool('select');
   selection = new Set([el.id]);
   changed();
-  toast('Koordinat sistemi eklendi — panelden fonksiyon grafiği çizebilirsin');
+  toast(t('Koordinat sistemi eklendi — panelden fonksiyon grafiği çizebilirsin'));
   setTimeout(() => $('#fnInput').focus());
 }
 
@@ -3030,6 +3039,8 @@ $('#menu').addEventListener('click', (e) => {
     changed();
   } else if (b.dataset.themeMode) {
     setTheme(b.dataset.themeMode);
+  } else if (b.dataset.lang) {
+    setLanguage(b.dataset.lang);
   }
 });
 
@@ -3043,6 +3054,19 @@ async function setTheme(mode) {
 }
 
 api.getTheme().then(updateThemeUI);
+
+// Arayüz dili: metinler sayfa yüklenirken kurulduğu için dil değişince tahta kaydedilip sayfa yeniden yüklenir.
+document.querySelectorAll('#langRow [data-lang]').forEach((b) => b.classList.toggle('selected', b.dataset.lang === lang));
+
+async function setLanguage(next) {
+  if (next === lang) return;
+  commitEditor();
+  // Vazgeçilirse yerel menüdeki seçim de eski dile döner.
+  if (!(await leaveBoard())) return api.setLang(lang);
+  await api.setLang(next);
+  reloadingForLang = true;
+  location.reload();
+}
 
 // Özel arka plan rengi: sürüklerken canlı önizleme, bırakınca kaydet
 $('#menu').addEventListener('input', (e) => {
@@ -3065,7 +3089,7 @@ function updateBgUI() {
   $('#bgColorRow').innerHTML = BG_COLORS.map((c) =>
     `<button class="swatch${c === board.bgColor ? ' selected' : ''}" data-bg-color="${c}" style="background:${c}" title="${c}"></button>`,
   ).join('') +
-    `<label class="swatch custom${custom ? ' selected' : ''}" title="Özel renk"><input type="color" id="bgCustomColor" value="${board.bgColor}" /></label>`;
+    `<label class="swatch custom${custom ? ' selected' : ''}" title="${t('Özel renk')}"><input type="color" id="bgCustomColor" value="${board.bgColor}" /></label>`;
   document.body.style.background = board.bgColor;
 }
 
@@ -3079,28 +3103,28 @@ async function handleCommand(cmd) {
       loadBoard(emptyBoard());
       zoomFit();
       closeGallery();
-      toast('Yeni tahta oluşturuldu');
+      toast(t('Yeni tahta oluşturuldu'));
       break;
     case 'open': {
       if (!(await leaveBoard())) return;
       const res = await api.open();
       if (res) {
         loadBoard(res.data);
-        toast('Tahta açıldı');
+        toast(t('Tahta açıldı'));
       }
       break;
     }
     case 'save':
       dirty = true;
       await saveNow();
-      toast('Kaydedildi');
+      toast(t('Kaydedildi'));
       break;
     case 'saveAs': {
       const p = await api.saveAs(serialize());
       if (p) {
         dirty = false;
-        setSaveState('Kaydedildi');
-        toast('Kaydedildi');
+        setSaveState(t('Kaydedildi'));
+        toast(t('Kaydedildi'));
       }
       break;
     }
@@ -3126,7 +3150,7 @@ async function handleCommand(cmd) {
     case 'createVault':
       return createVault();
     case 'clear':
-      if (board.elements.length && confirm('Tahtadaki her şey silinsin mi? (Ctrl+Z ile geri alınabilir)')) {
+      if (board.elements.length && confirm(t('Tahtadaki her şey silinsin mi? (Ctrl+Z ile geri alınabilir)'))) {
         checkpoint();
         board.elements = [];
         selection.clear();
@@ -3137,6 +3161,9 @@ async function handleCommand(cmd) {
       return helpOpen() ? closeHelp() : openHelp();
     case 'obsidianRefreshAll':
       return refreshObsidian(board.elements);
+    case 'lang:tr':
+    case 'lang:en':
+      return setLanguage(cmd.slice(5));
     default:
       runAction(cmd);
   }
@@ -3150,7 +3177,7 @@ async function openBoardPath(p) {
   if (res) {
     loadBoard(res.data);
     closeGallery();
-    toast('Tahta açıldı');
+    toast(t('Tahta açıldı'));
   }
 }
 api.onOpenPath(openBoardPath);
@@ -3166,7 +3193,7 @@ window.addEventListener('focus', async () => {
   board.view = view;
   sceneCacheValid = false;
   requestRender();
-  toast('Tahta başka bir cihazda güncellenmiş; son hâli yüklendi');
+  toast(t('Tahta başka bir cihazda güncellenmiş; son hâli yüklendi'));
 });
 // ---------- Rehber (F1) ----------
 
@@ -3178,32 +3205,32 @@ const helpOpen = () => !help.classList.contains('hidden');
 
 // Araç hedeflerinin rehberdeki adları (SHORTCUTS tablosunun tek eksiği bu etiketler).
 const TOOL_LABELS = {
-  select: 'Seç', cut: 'Makas (parça kes / kopyala)', pen: 'Kalem', highlighter: 'Fosforlu kalem', tempHighlighter: 'Geçici fosforlu kalem', laser: 'Lazer işaretçi',
-  eraser: 'Silgi', ruler: 'Cetveli aç / kapat', protractor: 'Açıölçeri aç / kapat', rect: 'Dikdörtgen',
-  ellipse: 'Elips', line: 'Çizgi', arrow: 'Ok', compass: 'Pergel', text: 'Metin', note: 'Yapışkan not',
-  cover: 'Gizleme bandı', image: 'Resim veya PDF ekle', obsidian: "Obsidian'dan ekle", axes: 'Koordinat sistemi ekle',
+  select: t('Seç'), cut: t('Makas (parça kes / kopyala)'), pen: t('Kalem'), highlighter: t('Fosforlu kalem'), tempHighlighter: t('Geçici fosforlu kalem'), laser: t('Lazer işaretçi'),
+  eraser: t('Silgi'), ruler: t('Cetveli aç / kapat'), protractor: t('Açıölçeri aç / kapat'), rect: t('Dikdörtgen'),
+  ellipse: t('Elips'), line: t('Çizgi'), arrow: t('Ok'), compass: t('Pergel'), text: t('Metin'), note: t('Yapışkan not'),
+  cover: t('Gizleme bandı'), image: t('Resim veya PDF ekle'), obsidian: t("Obsidian'dan ekle"), axes: t('Koordinat sistemi ekle'),
 };
 // Menü hızlandırıcıları ve fare/klavye kombinasyonları (araç kısayolları dışındakiler).
 const GENERAL_KEYS = [
-  [['Ctrl+Z'], 'Geri al'], [['Ctrl+Y', 'Ctrl+Shift+Z'], 'Yinele'],
-  [['Ctrl+C', 'Ctrl+X', 'Ctrl+V'], 'Kopyala / kes / yapıştır'], [['Ctrl+D'], 'Seçileni çoğalt'],
-  [['Ctrl+F'], 'Tahtada ara (Enter: sonraki, Shift+Enter: önceki)'],
-  [['Ctrl+A'], 'Tümünü seç (kilitliler hariç)'], [['Delete', 'Backspace'], 'Seçileni sil'],
-  [['Ctrl+L'], 'Seçileni kilitle / kilidini aç'], [['Çift tık'], 'Kilitli nesneyi seç; bandı aç / kapat'],
-  [['Ok tuşları'], 'Seçileni 1 piksel kaydır (Shift ile 10)'], [['['], 'Arkaya gönder'], [[']'], 'Öne getir'],
-  [['Esc'], 'Seçimi bırak, açık pencereyi kapat'], [['Shift', 'tıklama'], 'Seçime ekle / çıkar'],
-  [['Boşluk', 'sürükle'], 'Tahtayı kaydır'], [['Ctrl', 'tekerlek'], 'Yakınlaştır / uzaklaştır'],
-  [['Shift', 'tekerlek'], 'Yatay kaydır'], [['Ctrl+=', 'Ctrl+-'], 'Yakınlaştır / uzaklaştır'],
-  [['Ctrl+0'], '%100 yakınlık'], [['Ctrl+1'], 'Tümünü ekrana sığdır'],
-  [['Shift', 'Ctrl'], 'Kalemle çizerken basılı tut: dümdüz çizgi'],
-  [['Shift'], 'Şekil çizerken: kare / daire, 15° adım'],
-  [['Esc', 'Ctrl+Enter'], 'Metin / not yazmayı bitir'],
-  [['Enter', 'Esc'], 'Resim kırparken: uygula / vazgeç'],
-  [['Ctrl+G'], 'Tahtalarım'], [['Ctrl+N'], 'Yeni tahta'], [['Ctrl+O'], 'Aç'], [['Ctrl+S'], 'Kaydet'],
-  [['Ctrl+Shift+S'], 'Farklı kaydet'], [['Ctrl+E'], 'PNG olarak dışa aktar'],
-  [['Ctrl+Shift+E'], 'PDF olarak dışa aktar'], [['Ctrl+P'], 'Yazdır'],
-  [['Shift'], 'Pergelde: merkezi kare köşesine, yarıçapı yarım karelere oturt'],
-  [['F2'], 'Galeride seçili tahtayı yeniden adlandır'], [['F1'], 'Bu rehber'], [['F12'], 'Geliştirici araçları'],
+  [['Ctrl+Z'], t('Geri al')], [['Ctrl+Y', 'Ctrl+Shift+Z'], t('Yinele')],
+  [['Ctrl+C', 'Ctrl+X', 'Ctrl+V'], t('Kopyala / kes / yapıştır')], [['Ctrl+D'], t('Seçileni çoğalt')],
+  [['Ctrl+F'], t('Tahtada ara (Enter: sonraki, Shift+Enter: önceki)')],
+  [['Ctrl+A'], t('Tümünü seç (kilitliler hariç)')], [['Delete', 'Backspace'], t('Seçileni sil')],
+  [['Ctrl+L'], t('Seçileni kilitle / kilidini aç')], [[t('Çift tık')], t('Kilitli nesneyi seç; bandı aç / kapat')],
+  [[t('Ok tuşları')], t('Seçileni 1 piksel kaydır (Shift ile 10)')], [['['], t('Arkaya gönder')], [[']'], t('Öne getir')],
+  [['Esc'], t('Seçimi bırak, açık pencereyi kapat')], [['Shift', t('tıklama')], t('Seçime ekle / çıkar')],
+  [[t('Boşluk'), t('sürükle')], t('Tahtayı kaydır')], [['Ctrl', t('tekerlek')], t('Yakınlaştır / uzaklaştır')],
+  [['Shift', t('tekerlek')], t('Yatay kaydır')], [['Ctrl+=', 'Ctrl+-'], t('Yakınlaştır / uzaklaştır')],
+  [['Ctrl+0'], t('%100 yakınlık')], [['Ctrl+1'], t('Tümünü ekrana sığdır')],
+  [['Shift', 'Ctrl'], t('Kalemle çizerken basılı tut: dümdüz çizgi')],
+  [['Shift'], t('Şekil çizerken: kare / daire, 15° adım')],
+  [['Esc', 'Ctrl+Enter'], t('Metin / not yazmayı bitir')],
+  [['Enter', 'Esc'], t('Resim kırparken: uygula / vazgeç')],
+  [['Ctrl+G'], t('Tahtalarım')], [['Ctrl+N'], t('Yeni tahta')], [['Ctrl+O'], t('Aç')], [['Ctrl+S'], t('Kaydet')],
+  [['Ctrl+Shift+S'], t('Farklı kaydet')], [['Ctrl+E'], t('PNG olarak dışa aktar')],
+  [['Ctrl+Shift+E'], t('PDF olarak dışa aktar')], [['Ctrl+P'], t('Yazdır')],
+  [['Shift'], t('Pergelde: merkezi kare köşesine, yarıçapı yarım karelere oturt')],
+  [['F2'], t('Galeride seçili tahtayı yeniden adlandır')], [['F1'], t('Bu rehber')], [['F12'], t('Geliştirici araçları')],
 ];
 
 const kbd = (k) => `<kbd>${k}</kbd>`;
@@ -3216,7 +3243,7 @@ function buildHelpKeys() {
     const keys = SLOTS.filter((slot) => s[slot]).map((slot) => {
       const on = capturing && capturing.target === s.target && capturing.slot === slot;
       return `<button class="keychip${on ? ' capturing' : ''}" data-target="${s.target}" data-slot="${slot}" ` +
-        `title="Değiştirmek için tıkla">${on ? 'Tuşa bas…' : s[slot].toUpperCase()}</button>`;
+        `title="${t('Değiştirmek için tıkla')}">${on ? t('Tuşa bas…') : s[slot].toUpperCase()}</button>`;
     }).join(' ');
     return `<tr><td>${keys}</td><td>${TOOL_LABELS[s.target] || s.target}</td></tr>`;
   }).join('');
@@ -3242,7 +3269,7 @@ function assignShortcut(target, slot, newKey) {
     for (const sl of SLOTS) {
       if (o[sl] === newKey) {
         o[sl] = old;
-        toast(`"${newKey.toUpperCase()}" tuşu "${TOOL_LABELS[o.target]}" aracındaydı; tuşlar yer değiştirdi`);
+        toast(t('"{tus}" tuşu "{arac}" aracındaydı; tuşlar yer değiştirdi', { tus: newKey.toUpperCase(), arac: TOOL_LABELS[o.target] }));
       }
     }
   }
@@ -3268,7 +3295,7 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (e.key === 'Escape') { /* vazgeç */ }
   else if (e.ctrlKey || e.metaKey || e.altKey || k.length !== 1 || [' ', '[', ']'].includes(k)) {
-    toast('Bu tuş kısayol olarak kullanılamaz; tek bir harf, rakam ya da simge seç');
+    toast(t('Bu tuş kısayol olarak kullanılamaz; tek bir harf, rakam ya da simge seç'));
   } else {
     assignShortcut(target, slot, k);
     return;
@@ -3280,7 +3307,7 @@ $('#helpResetKeys').addEventListener('click', () => {
   capturing = null;
   for (const s of SHORTCUTS) Object.assign(s, DEFAULT_SHORTCUTS.find((x) => x.target === s.target));
   refreshShortcutUi();
-  toast('Kısayollar varsayılana döndürüldü');
+  toast(t('Kısayollar varsayılana döndürüldü'));
 });
 
 function showHelpTab(name) {
@@ -3392,7 +3419,7 @@ function renderVaults() {
     const chip = document.createElement('div');
     chip.className = 'chip vchip' + (v.current ? ' selected' : '') + (v.missing ? ' missing' : '');
     chip.dataset.vault = v.path;
-    chip.title = v.path + (v.missing ? ' (bulunamadı)' : '');
+    chip.title = v.path + (v.missing ? t(' (bulunamadı)') : '');
     const name = document.createElement('span');
     name.className = 'vname';
     name.textContent = v.name;
@@ -3401,7 +3428,7 @@ function renderVaults() {
       const rm = document.createElement('button');
       rm.className = 'vremove';
       rm.dataset.gcmd = 'removeVault';
-      rm.title = 'Listeden kaldır (dosyalar silinmez)';
+      rm.title = t('Listeden kaldır (dosyalar silinmez)');
       rm.textContent = '×';
       chip.appendChild(rm);
     }
@@ -3411,11 +3438,11 @@ function renderVaults() {
 
 function relativeTime(ms) {
   const s = (Date.now() - ms) / 1000;
-  if (s < 60) return 'az önce';
-  if (s < 3600) return `${Math.floor(s / 60)} dakika önce`;
-  if (s < 86400) return `${Math.floor(s / 3600)} saat önce`;
-  if (s < 86400 * 7) return `${Math.floor(s / 86400)} gün önce`;
-  return new Date(ms).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+  if (s < 60) return t('az önce');
+  if (s < 3600) return t('{n} dakika önce', { n: Math.floor(s / 60) });
+  if (s < 86400) return t('{n} saat önce', { n: Math.floor(s / 3600) });
+  if (s < 86400 * 7) return t('{n} gün önce', { n: Math.floor(s / 86400) });
+  return new Date(ms).toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 const ICON_RENAME = '<svg viewBox="0 0 24 24"><path d="M4 20l4-1L19 8a2.1 2.1 0 00-3-3L5 16z"/></svg>';
@@ -3429,7 +3456,7 @@ function renderGallery() {
   const add = document.createElement('button');
   add.className = 'gcard gnew';
   add.dataset.gcmd = 'new';
-  add.innerHTML = '<div class="gthumb"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div><div class="gname">Yeni tahta</div>';
+  add.innerHTML = '<div class="gthumb"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div><div class="gname">' + t('Yeni tahta') + '</div>';
   galleryGrid.appendChild(add);
 
   for (const b of list) {
@@ -3445,7 +3472,7 @@ function renderGallery() {
       img.alt = '';
       thumb.appendChild(img);
     } else {
-      thumb.innerHTML = '<span class="muted">Önizleme yok</span>';
+      thumb.innerHTML = `<span class="muted">${t('Önizleme yok')}</span>`;
     }
     const name = document.createElement('div');
     name.className = 'gname';
@@ -3453,11 +3480,11 @@ function renderGallery() {
     name.title = b.name;
     const meta = document.createElement('div');
     meta.className = 'gmeta';
-    meta.textContent = (b.path === galleryData.current ? 'Açık · ' : '') + relativeTime(b.mtime);
+    meta.textContent = (b.path === galleryData.current ? t('Açık · ') : '') + relativeTime(b.mtime);
     const actions = document.createElement('div');
     actions.className = 'gactions';
-    actions.innerHTML = `<button class="tool" data-gcmd="rename" title="Yeniden adlandır">${ICON_RENAME}</button>` +
-      `<button class="tool" data-gcmd="delete" title="Sil">${ICON_DELETE}</button>`;
+    actions.innerHTML = `<button class="tool" data-gcmd="rename" title="${t('Yeniden adlandır')}">${ICON_RENAME}</button>` +
+      `<button class="tool" data-gcmd="delete" title="${t('Sil')}">${ICON_DELETE}</button>`;
     card.append(thumb, actions, name, meta);
     galleryGrid.appendChild(card);
   }
@@ -3465,7 +3492,7 @@ function renderGallery() {
   if (!list.length && q) {
     const empty = document.createElement('p');
     empty.className = 'muted gempty';
-    empty.textContent = 'Aramaya uyan tahta yok.';
+    empty.textContent = t('Aramaya uyan tahta yok.');
     galleryGrid.appendChild(empty);
   }
 }
@@ -3510,19 +3537,19 @@ function startRename(card) {
 
 async function deleteFromGallery(card) {
   const name = card.querySelector('.gname')?.textContent || '';
-  if (!confirm(`"${name}" silinsin mi?`)) return;
+  if (!confirm(t('"{ad}" silinsin mi?', { ad: name }))) return;
   if (autoSave) await saveNow();
   const res = await api.deleteBoard(card.dataset.path);
   if (res.deleted && res.wasCurrent) {
     loadBoard(emptyBoard());
     zoomFit();
   }
-  if (res.deleted) toast('Tahta silindi');
+  if (res.deleted) toast(t('Tahta silindi'));
   refreshGallery();
 }
 
 // Vault'a geçince oradaki tahta açılır; galeri açıksa açık kalır ki yeni vault'un tahtaları görülsün.
-function vaultOpened(res, message = 'Vault açıldı') {
+function vaultOpened(res, message = t('Vault açıldı')) {
   if (!res) return;
   if (res.error) return toast(res.error);
   loadBoard(res.data);
@@ -3538,7 +3565,7 @@ async function openVault() {
 
 async function createVault() {
   if (!(await leaveBoard())) return;
-  vaultOpened(await api.createVault(), 'Yeni vault oluşturuldu');
+  vaultOpened(await api.createVault(), t('Yeni vault oluşturuldu'));
 }
 
 async function switchVault(dir) {
@@ -3593,7 +3620,7 @@ function galleryKeydown(e) {
 async function exportPng() {
   const els = selection.size ? selectedEls() : board.elements;
   const b = unionBBox(els);
-  if (!b) return toast('Dışa aktarılacak bir şey yok');
+  if (!b) return toast(t('Dışa aktarılacak bir şey yok'));
   const pad = 40;
   const scale = Math.min(2, 12000 / Math.max(b.w + pad * 2, b.h + pad * 2));
   const w = Math.ceil((b.w + pad * 2) * scale);
@@ -3607,7 +3634,7 @@ async function exportPng() {
   c.setTransform(scale, 0, 0, scale, view.x, view.y);
   for (const el of els) drawElement(c, el);
   const p = await api.exportPng(out.toDataURL('image/png'));
-  if (p) toast('Resim kaydedildi');
+  if (p) toast(t('Resim kaydedildi'));
 }
 
 // ---------- PDF olarak dışa aktarma ve yazdırma ----------
@@ -3698,8 +3725,8 @@ $('#exportForm').addEventListener('submit', (e) => e.preventDefault());
 function askExportOptions(mode) {
   const form = $('#exportForm');
   const hasSel = selection.size > 0;
-  $('#exportTitle').textContent = mode === 'print' ? 'Yazdır' : 'PDF olarak dışa aktar';
-  $('#exportOk').firstChild.textContent = mode === 'print' ? 'Yazdır… ' : 'Kaydet… ';
+  $('#exportTitle').textContent = mode === 'print' ? t('Yazdır') : t('PDF olarak dışa aktar');
+  $('#exportOk').firstChild.textContent = (mode === 'print' ? t('Yazdır…') : t('Kaydet…')) + ' ';
   $('#exScopeSel').classList.toggle('hidden', !hasSel);
   form.exScope.value = hasSel ? 'selection' : 'all';
   form.exOrient.value = exportOpts.orient;
@@ -3710,7 +3737,7 @@ function askExportOptions(mode) {
     const o = read();
     const els = o.scope === 'selection' ? selectedEls() : board.elements;
     const n = pageGeometry(els, o).slices.length;
-    $('#exSummary').textContent = `${n} sayfa`;
+    $('#exSummary').textContent = t('{n} sayfa', { n });
   };
 
   return new Promise((resolve) => {
@@ -3751,24 +3778,24 @@ function askExportOptions(mode) {
 }
 
 async function exportPages(mode) {
-  if (!board.elements.length) return toast('Dışa aktarılacak bir şey yok');
+  if (!board.elements.length) return toast(t('Dışa aktarılacak bir şey yok'));
   hideMenu();
   const o = await askExportOptions(mode);
   if (!o) return;
   const els = o.scope === 'selection' ? selectedEls() : board.elements;
-  toast('Sayfalar hazırlanıyor…');
+  toast(t('Sayfalar hazırlanıyor…'));
   // Toast'un görünmesi için çizime bir kare izin verilir.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r)));
   const pages = renderPages(els, o);
   const landscape = o.orient === 'landscape';
   if (mode === 'print') {
     const res = await api.printPages(pages, landscape);
-    if (res?.error) toast('Yazdırılamadı: ' + res.error);
-    else if (res) toast('Yazıcıya gönderildi');
-    else toast('Yazdırma iptal edildi');
+    if (res?.error) toast(t('Yazdırılamadı: {hata}', { hata: res.error }));
+    else if (res) toast(t('Yazıcıya gönderildi'));
+    else toast(t('Yazdırma iptal edildi'));
   } else {
     const res = await api.exportPdf(pages, landscape);
-    if (res?.error) toast('PDF oluşturulamadı: ' + res.error);
+    if (res?.error) toast(t('PDF oluşturulamadı: {hata}', { hata: res.error }));
     else if (res) toast(`PDF kaydedildi (${pages.length} sayfa)`);
   }
 }
@@ -3823,14 +3850,14 @@ async function loadPdfJs() {
 function parsePageRanges(text, max) {
   const pages = new Set();
   const parts = text.split(/[,;\s]+/).filter(Boolean);
-  if (!parts.length) return { error: 'Sayfa numarası yaz' };
+  if (!parts.length) return { error: t('Sayfa numarası yaz') };
   for (const part of parts) {
     const m = /^(\d+)?(?:\s*[-–]\s*(\d+)?)?$/.exec(part);
-    if (!m || (!m[1] && !m[2])) return { error: `Anlaşılmadı: "${part}"` };
+    if (!m || (!m[1] && !m[2])) return { error: t('Anlaşılmadı: "{x}"', { x: part }) };
     const isRange = part.includes('-') || part.includes('–');
     const a = m[1] ? +m[1] : 1;
     const b = isRange ? (m[2] ? +m[2] : max) : a;
-    if (a < 1 || b < 1 || a > max || b > max) return { error: `PDF ${max} sayfa; "${part}" dışarıda kalıyor` };
+    if (a < 1 || b < 1 || a > max || b > max) return { error: t('PDF {n} sayfa; "{x}" dışarıda kalıyor', { n: max, x: part }) };
     for (let n = Math.min(a, b); n <= Math.max(a, b); n++) pages.add(n);
   }
   return { pages: [...pages].sort((x, y) => x - y) };
@@ -3863,8 +3890,8 @@ function askPdfPages(name, count) {
     if (mode === 'range') return parsePageRanges(range.value, count);
     const s = Math.floor(+from.value);
     const n = Math.floor(+take.value);
-    if (!(s >= 1 && s <= count)) return { error: `Başlangıç 1 ile ${count} arasında olmalı`, field: from };
-    if (!(n >= 1)) return { error: 'Sayfa sayısı en az 1 olmalı', field: take };
+    if (!(s >= 1 && s <= count)) return { error: t('Başlangıç 1 ile {n} arasında olmalı', { n: count }), field: from };
+    if (!(n >= 1)) return { error: t('Sayfa sayısı en az 1 olmalı'), field: take };
     const end = Math.min(count, s + n - 1);
     return { pages: Array.from({ length: end - s + 1 }, (_, i) => s + i), clipped: s + n - 1 > count };
   };
@@ -3878,9 +3905,9 @@ function askPdfPages(name, count) {
     if (r.error) summary.textContent = r.error;
     else {
       const p = r.pages;
-      const which = p.length === 1 ? `${p[0]}. sayfa` : `${p.length} sayfa (${describePages(p)})`;
-      summary.textContent = which + ' eklenecek' + (r.clipped ? ' — PDF burada bitiyor' : '') +
-        (p.length > 30 ? '. Biraz sürebilir.' : '');
+      const which = p.length === 1 ? t('{n}. sayfa', { n: p[0] }) : t('{n} sayfa', { n: p.length }) + ` (${describePages(p)})`;
+      summary.textContent = t('{x} eklenecek', { x: which }) + (r.clipped ? t(' — PDF burada bitiyor') : '') +
+        (p.length > 30 ? t('. Biraz sürebilir.') : '');
     }
     return r;
   };
@@ -3953,7 +3980,7 @@ async function insertPdf(file, at) {
     const lib = await loadPdfJs();
     doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
   } catch {
-    return toast('PDF açılamadı: ' + file.name);
+    return toast(t('PDF açılamadı: {ad}', { ad: file.name }));
   }
   const pages = doc.numPages > 1 ? await askPdfPages(file.name, doc.numPages) : [1];
   if (!pages) return doc.destroy();
@@ -3991,12 +4018,12 @@ async function insertPdf(file, at) {
   // Kilitli sayfalar seçilmez: üzerine hemen yazılabilir, Seç aracıyla kement de kaydırmaz.
   if (studentMode && pdfLock) {
     changed();
-    return toast(`${count} sayfa eklendi ve kilitlendi — taşımak için çift tıklayıp kilidini aç (Ctrl+L)`);
+    return toast(t('{n} sayfa eklendi ve kilitlendi — taşımak için çift tıklayıp kilidini aç (Ctrl+L)', { n: count }));
   }
   setTool('select');
   selection = new Set(created.map((el) => el.id));
   changed();
-  toast(`${count} sayfa eklendi`);
+  toast(t('{n} sayfa eklendi', { n: count }));
 }
 
 async function insertImageFiles(files, at) {
@@ -4017,7 +4044,7 @@ async function insertImageFiles(files, at) {
       });
       offset += 24 / z;
     } catch {
-      toast('Resim açılamadı: ' + f.name);
+      toast(t('Resim açılamadı: {ad}', { ad: f.name }));
     }
   }
   if (!created.length) return;
@@ -4056,8 +4083,8 @@ async function insertFromObsidian() {
 // Bölümleri Obsidian'daki güncel hâlleriyle yeniden üretir; genişlik korunur, yükseklik içeriğe uyar.
 async function refreshObsidian(els) {
   const list = els.filter((el) => el.obsidian);
-  if (!list.length) return toast('Tahtada Obsidian\'dan eklenmiş bölüm yok');
-  toast(list.length > 1 ? `${list.length} bölüm yenileniyor…` : 'Yenileniyor…');
+  if (!list.length) return toast(t("Tahtada Obsidian'dan eklenmiş bölüm yok"));
+  toast(list.length > 1 ? t('{n} bölüm yenileniyor…', { n: list.length }) : t('Yenileniyor…'));
   const results = await Promise.all(list.map((el) => api.obsidianRender(el.obsidian)));
   let updated = 0;
   const errors = [];
@@ -4075,14 +4102,14 @@ async function refreshObsidian(els) {
   });
   if (updated) changed();
   if (errors.length) toast(errors.join(' — '));
-  else if (updated) toast(updated > 1 ? `${updated} bölüm güncellendi` : 'Bölüm güncellendi');
-  else toast('Bölümler zaten güncel');
+  else if (updated) toast(updated > 1 ? t('{n} bölüm güncellendi', { n: updated }) : t('Bölüm güncellendi'));
+  else toast(t('Bölümler zaten güncel'));
 }
 
 async function openInObsidian(el) {
   if (!el?.obsidian) return;
   const ok = await api.obsidianOpen(el.obsidian);
-  if (!ok) toast('Not bulunamadı; vault bağlı olmayabilir');
+  if (!ok) toast(t('Not bulunamadı; vault bağlı olmayabilir'));
 }
 
 $('#imageInput').addEventListener('change', (e) => {

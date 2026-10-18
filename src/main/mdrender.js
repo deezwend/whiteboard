@@ -8,6 +8,7 @@ const { pathToFileURL } = require('url');
 const MarkdownIt = require('markdown-it');
 const katex = require('katex');
 const obs = require('./obsidian');
+const { L } = require('./i18n');
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const MAX_EMBED_DEPTH = 3;
@@ -534,15 +535,15 @@ function sectionLabel(name, section) {
 // Bir notun bölümünü resme dönüştürür: { src, w, h, title } ya da { error }.
 function renderSection({ vault, rel, section, width }) {
   const abs = path.resolve(vault, String(rel || ''));
-  if (!insideVault(vault, abs) || !/\.md$/i.test(abs)) return Promise.resolve({ error: 'Geçersiz not yolu.' });
+  if (!insideVault(vault, abs) || !/\.md$/i.test(abs)) return Promise.resolve({ error: L('Geçersiz not yolu.') });
   let text;
   try {
     text = fs.readFileSync(abs, 'utf8');
   } catch {
-    return Promise.resolve({ error: 'Not bulunamadı; taşınmış ya da silinmiş olabilir.' });
+    return Promise.resolve({ error: L('Not bulunamadı; taşınmış ya da silinmiş olabilir.') });
   }
   const md = obs.extractSection(text, section);
-  if (md == null) return Promise.resolve({ error: 'Bölüm notta bulunamadı; başlığın adı değişmiş olabilir.' });
+  if (md == null) return Promise.resolve({ error: L('Bölüm notta bulunamadı; başlığın adı değişmiş olabilir.') });
   const noteRel = relOf(vault, abs);
   const env = { vault, rel: noteRel, files: vaultFiles(vault), depth: 0 };
   const body = mdi.render(preprocess(md), env);
@@ -556,7 +557,7 @@ function renderSection({ vault, rel, section, width }) {
     try {
       return { ...(await rasterize(html)), title };
     } catch (err) {
-      return { error: 'Bölüm resme dönüştürülemedi: ' + err.message };
+      return { error: L('Bölüm resme dönüştürülemedi: {hata}', { hata: err.message }) };
     } finally {
       scheduleClose();
     }
@@ -623,7 +624,7 @@ function renderMath({ text, fontSize, color }) {
       const { img, w, h } = await rasterizeImage(html, MATH_SCALE);
       return { src: inkToAlpha(img, color).toDataURL(), w, h };
     } catch (err) {
-      return { error: 'Formül çizilemedi: ' + err.message };
+      return { error: L('Formül çizilemedi: {hata}', { hata: err.message }) };
     } finally {
       scheduleClose();
     }
