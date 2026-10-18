@@ -3825,7 +3825,9 @@ function prepareImage(src) {
       const c = document.createElement('canvas');
       c.width = w;
       c.height = h;
-      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      const cx = c.getContext('2d');
+      cx.imageSmoothingQuality = 'high';
+      cx.drawImage(img, 0, 0, w, h);
       const jpeg = src.startsWith('data:image/jpeg');
       resolve({ src: c.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.9), w, h });
     };

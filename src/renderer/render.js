@@ -25,6 +25,48 @@ export function getImage(src) {
   return img;
 }
 
+// Resmin yarıya yarıya küçültülmüş kopyaları. Tuval 2 kattan fazla küçültmede pikselleri atlayıp
+// görüntüyü tırtıklı yapar; bu yüzden hedef boyuta en yakın (ondan küçük olmayan) kopyadan çizilir.
+const mipCache = new WeakMap();
+
+function mipLevels(img) {
+  let levels = mipCache.get(img);
+  if (!levels) {
+    levels = [img];
+    let w = img.naturalWidth, h = img.naturalHeight;
+    let prev = img;
+    while (w > 64 && h > 64) {
+      w = Math.max(1, Math.round(w / 2));
+      h = Math.max(1, Math.round(h / 2));
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const cx = c.getContext('2d');
+      cx.imageSmoothingQuality = 'high';
+      cx.drawImage(prev, 0, 0, w, h);
+      levels.push(c);
+      prev = c;
+    }
+    mipCache.set(img, levels);
+  }
+  return levels;
+}
+
+function drawImageSmooth(ctx, img, x, y, w, h) {
+  const m = ctx.getTransform();
+  const scale = Math.hypot(m.a, m.b);
+  const targetW = Math.abs(w) * scale;
+  const levels = mipLevels(img);
+  let src = levels[0];
+  for (const lv of levels) {
+    if ((lv.naturalWidth ?? lv.width) < targetW) break;
+    src = lv;
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, x, y, w, h);
+}
+
 const measureCtx = document.createElement('canvas').getContext('2d');
 
 export function font(size) {
@@ -447,7 +489,7 @@ export function drawElement(ctx, el, hideText = false) {
       if (renderOpts.math && el.math?.src && el.math.text === el.text) {
         const img = getImage(el.math.src);
         if (img.complete && img.naturalWidth) {
-          ctx.drawImage(img, el.x, el.y, el.w, el.h);
+          drawImageSmooth(ctx, img, el.x, el.y, el.w, el.h);
           break;
         }
       }
@@ -485,7 +527,7 @@ export function drawElement(ctx, el, hideText = false) {
     case 'image': {
       const img = getImage(el.src);
       const b = normRect(el.x, el.y, el.w, el.h);
-      if (img.complete && img.naturalWidth) ctx.drawImage(img, b.x, b.y, b.w, b.h);
+      if (img.complete && img.naturalWidth) drawImageSmooth(ctx, img, b.x, b.y, b.w, b.h);
       else {
         ctx.fillStyle = '#eef0f4';
         ctx.fillRect(b.x, b.y, b.w, b.h);
