@@ -47,17 +47,18 @@ export const HELP_EN = {
     <h4>Brush types</h4>
     <p>Chosen from the top row of the properties panel while the pen is selected. They can also be applied to selected lines:</p>
     <ul>
-      <li><b>Pen</b> – plain, standard line.</li>
-      <li><b>Calligraphy</b> – slanted sharp nib; the line thins and thickens with direction.</li>
-      <li><b>Brush pen</b> – thick when drawn slowly, thin when fast; pointed ends.</li>
-      <li><b>Fountain pen</b> – ink with slightly varying thickness.</li>
-      <li><b>Dashed</b> – a dashed line.</li>
-      <li><b>Arrow</b> – adds an arrowhead to the end of the line.</li>
-      <li><b>Dashed arrow</b> – draws a dashed line with an arrowhead at the end.</li>
-      <li><b>Rainbow</b> – has its own colors; the color choice does not apply.</li>
-      <li><b>Galaxy</b> – starry space ink; pick the classic space colors or another tone (including a custom color) from the color row. The color of selected galaxy lines can be changed later too.</li>
-      <li><b>Tape</b> – patterned sticky tape (washi).</li>
+      <li><kbd>Alt+1</kbd> <b>Pen</b> – plain, standard line.</li>
+      <li><kbd>Alt+2</kbd> <b>Calligraphy</b> – slanted sharp nib; the line thins and thickens with direction.</li>
+      <li><kbd>Alt+3</kbd> <b>Brush pen</b> – thick when drawn slowly, thin when fast; pointed ends.</li>
+      <li><kbd>Alt+4</kbd> <b>Fountain pen</b> – ink with slightly varying thickness.</li>
+      <li><kbd>Alt+5</kbd> <b>Dashed</b> – a dashed line.</li>
+      <li><kbd>Alt+6</kbd> <b>Arrow</b> – adds an arrowhead to the end of the line.</li>
+      <li><kbd>Alt+7</kbd> <b>Dashed arrow</b> – draws a dashed line with an arrowhead at the end.</li>
+      <li><kbd>Alt+8</kbd> <b>Rainbow</b> – has its own colors; the color choice does not apply.</li>
+      <li><kbd>Alt+9</kbd> <b>Galaxy</b> – starry space ink; pick the classic space colors or another tone (including a custom color) from the color row. The color of selected galaxy lines can be changed later too.</li>
+      <li><kbd>Alt+0</kbd> <b>Tape</b> – patterned sticky tape (washi).</li>
     </ul>
+    <p class="tip">The brush shortcuts (<kbd>Alt+1</kbd> … <kbd>Alt+0</kbd>) switch to the Pen and pick that brush from any tool. If pen lines are selected, the brush is applied to them.</p>
     <h4>Drawing straight lines</h4>
     <p>Hold <kbd>Shift</kbd> or <kbd>Ctrl</kbd> while drawing: from the point where you pressed the key, a perfectly straight line comes out. The line snaps to horizontal, vertical and 45° angles.</p>
     <h4>Convert to shape</h4>

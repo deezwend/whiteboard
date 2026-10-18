@@ -33,6 +33,7 @@ const EN = {
   'Yıldızlı uzay mürekkebi': 'Starry space ink',
   'Bant': 'Tape',
   'Desenli yapışkan bant (washi)': 'Patterned sticky tape (washi)',
+  'Fırça: {name}': 'Brush: {name}',
 
   // Kaydetme ve modlar
   'Kaydedilmedi': 'Not saved',

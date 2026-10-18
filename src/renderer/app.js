@@ -2419,8 +2419,8 @@ function updateProps() {
   const brushRow = $('#brushRow');
   brushRow.classList.toggle('hidden', !c.brushes);
   if (c.brushes) {
-    brushRow.innerHTML = BRUSHES.map((b) =>
-      `<button class="brush-btn${b.id === v.brush ? ' selected' : ''}" data-brush="${b.id}" title="${b.label} — ${b.title}"><svg viewBox="0 0 32 16">${b.icon}</svg></button>`,
+    brushRow.innerHTML = BRUSHES.map((b, i) =>
+      `<button class="brush-btn${b.id === v.brush ? ' selected' : ''}" data-brush="${b.id}" title="${b.label} — ${b.title} (Alt+${(i + 1) % 10})"><svg viewBox="0 0 32 16">${b.icon}</svg></button>`,
     ).join('');
   }
 
@@ -2554,6 +2554,14 @@ function applyStyle(prop, value) {
   savePrefs();
   updateProps();
   refreshCursor();
+}
+
+// Alt+1 … Alt+0 kısayolu: seçili kalem çizgileri varsa onlara, yoksa kaleme geçip fırçayı uygular.
+function pickBrush(brush) {
+  if (!brush) return;
+  if (!propsContext()?.brushes) setTool('pen');
+  applyStyle('brush', brush.id);
+  toast(t('Fırça: {name}', { name: brush.label }));
 }
 
 $('#props').addEventListener('click', (e) => {
@@ -3223,6 +3231,7 @@ const GENERAL_KEYS = [
   [['Shift', t('tekerlek')], t('Yatay kaydır')], [['Ctrl+=', 'Ctrl+-'], t('Yakınlaştır / uzaklaştır')],
   [['Ctrl+0'], t('%100 yakınlık')], [['Ctrl+1'], t('Tümünü ekrana sığdır')],
   [['Shift', 'Ctrl'], t('Kalemle çizerken basılı tut: dümdüz çizgi')],
+  ...BRUSHES.map((b, i) => [[`Alt+${(i + 1) % 10}`], t('Fırça: {name}', { name: b.label })]),
   [['Shift'], t('Şekil çizerken: kare / daire, 15° adım')],
   [['Esc', 'Ctrl+Enter'], t('Metin / not yazmayı bitir')],
   [['Enter', 'Esc'], t('Resim kırparken: uygula / vazgeç')],
@@ -4249,6 +4258,13 @@ window.addEventListener('keydown', (e) => {
       e.preventDefault();
       document.execCommand(k === 'c' ? 'copy' : 'cut');
     }
+    return;
+  }
+
+  const brushDigit = e.altKey && /^(?:Digit|Numpad)(\d)$/.exec(e.code);
+  if (brushDigit) {
+    e.preventDefault();
+    pickBrush(BRUSHES[(Number(brushDigit[1]) + 9) % 10]);
     return;
   }
 
