@@ -358,9 +358,51 @@ function drawStrokeArrowHead(ctx, el) {
   ctx.stroke();
 }
 
+// Taralı fırça: çizilen yolun kapattığı alan ince paralel çizgilerle taranır. Çizgiler tuvalin
+// sabit ızgarasına hizalıdır; böylece yan yana taranan alanların çizgileri birbirini sürdürür.
+// Kalınlık tarama sıklığını belirler. hatch: yok = '/' yönü, 'back' = '\' yönü, 'cross' = ikisi.
+function drawHatch(ctx, el) {
+  const pts = el.points;
+  if (pts.length < 3) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of pts) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  ctx.save();
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.clip();
+  // Çizgiler arası dik uzaklık gap; x ± y sabitinde bu, gap·√2 adımdır.
+  const step = (el.width * 2 + 4) * Math.SQRT2;
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'butt';
+  ctx.beginPath();
+  const dirs = el.hatch === 'cross' ? [1, -1] : el.hatch === 'back' ? [-1] : [1];
+  for (const s of dirs) {
+    // s = 1: x + y = c ('/'), s = -1: x - y = c ('\').
+    const lo = s === 1 ? minX + minY : minX - maxY;
+    const hi = s === 1 ? maxX + maxY : maxX - minY;
+    for (let c = Math.floor(lo / step) * step; c <= hi; c += step) {
+      ctx.moveTo(minX, s * (c - minX));
+      ctx.lineTo(maxX, s * (c - maxX));
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawStroke(ctx, el) {
   const pts = el.points;
   const brush = el.highlighter ? 'normal' : el.brush || 'normal';
+  if (brush === 'hatch') {
+    ctx.strokeStyle = el.color;
+    drawHatch(ctx, el);
+    return;
+  }
   ctx.lineCap = brush === 'tape' ? 'butt' : 'round';
   ctx.lineJoin = 'round';
   const color = brush === 'rainbow' ? 'hsl(0, 90%, 55%)' : brush === 'galaxy' ? galaxyColor(0, galaxyPalette(el)) : el.color;

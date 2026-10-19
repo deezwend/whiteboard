@@ -177,6 +177,8 @@ export function hitTest(el, x, y, tol) {
     case 'stroke': {
       const r = el.width / 2 + tol;
       const pts = el.points;
+      // Taralı alan dolgulu şekil gibi içinden de tutulur.
+      if (el.brush === 'hatch' && pts.length > 2 && pointInPolygon(x, y, pts)) return true;
       if (pts.length === 1) return Math.hypot(x - pts[0][0], y - pts[0][1]) <= r;
       for (let i = 1; i < pts.length; i++) {
         if (distToSeg(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) <= r) return true;
@@ -261,12 +263,13 @@ export function insideLasso(el, lasso) {
   return inside / pts.length >= 0.8;
 }
 
-// Öğenin çizgisini nokta listesine çevirir (kısmi silgi için). Dolgulu şekiller ve
-// oklar parçalanamaz; bunlar için null döner ve öğe bütün olarak silinir.
+// Öğenin çizgisini nokta listesine çevirir (kısmi silgi için). Dolgulu şekiller, taralı
+// alanlar ve oklar parçalanamaz; bunlar için null döner ve öğe bütün olarak silinir.
 function toPolyline(el) {
   switch (el.type) {
     case 'stroke':
-      return el.points;
+      // Taralı alanın parçaları ayrı ayrı kapanıp yanlış alanları tarardı.
+      return el.brush === 'hatch' ? null : el.points;
     case 'line':
       return [[el.x1, el.y1, 0.5], [el.x2, el.y2, 0.5]];
     case 'polygon':

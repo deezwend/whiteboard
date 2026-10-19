@@ -33,6 +33,11 @@ const EN = {
   'Yıldızlı uzay mürekkebi': 'Starry space ink',
   'Bant': 'Tape',
   'Desenli yapışkan bant (washi)': 'Patterned sticky tape (washi)',
+  'Taralı': 'Hatched',
+  'Çizdiğin alanın içini eğik çizgilerle tarar': 'Fills the area you draw around with slanted lines',
+  'Eğik tarama': 'Slanted hatching',
+  'Ters eğik tarama': 'Reverse slanted hatching',
+  'Çapraz tarama': 'Crosshatching',
   'Fırça: {name}': 'Brush: {name}',
 
   // Kaydetme ve modlar

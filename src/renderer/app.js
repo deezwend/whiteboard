@@ -73,6 +73,14 @@ const BRUSHES = [
       <g fill="#fff" stroke="none"><circle cx="6.5" cy="6.6" r=".7"/><circle cx="12" cy="5.4" r=".6"/><circle cx="17" cy="10.4" r=".7"/><circle cx="23" cy="10.6" r=".6"/><circle cx="27.5" cy="6.4" r=".6"/></g>` },
   { id: 'tape', label: t('Bant'), title: t('Desenli yapışkan bant (washi)'),
     icon: '<path d="M2 11.5L30 4.5" stroke="currentColor" stroke-width="7" stroke-linecap="butt" opacity=".75"/><path d="M2 11.5L30 4.5" stroke="#fff" stroke-width="7" stroke-linecap="butt" stroke-dasharray="1.5 2.5" opacity=".5"/>' },
+  { id: 'hatch', label: t('Taralı'), title: t('Çizdiğin alanın içini eğik çizgilerle tarar'),
+    icon: '<defs><clipPath id="brushHatch"><path d="M4 14 9 2h19l-5 12z"/></clipPath></defs><path d="M0 16 14 2M5 16 19 2M10 16 24 2M15 16 29 2M20 16 34 2M25 16 39 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="butt" clip-path="url(#brushHatch)"/>' },
+];
+// Taralı fırçanın tarama yönleri: 'fwd' varsayılandır (öğeye yazılmaz), diğerleri öğenin hatch alanına yazılır.
+const HATCH_DIRS = [
+  { id: 'fwd', label: t('Eğik tarama'), icon: '<path d="M7 15 20 2M12 15 25 2" />' },
+  { id: 'back', label: t('Ters eğik tarama'), icon: '<path d="M7 2l13 13M12 2l13 13" />' },
+  { id: 'cross', label: t('Çapraz tarama'), icon: '<path d="M7 15 20 2M12 15 25 2M7 2l13 13M12 2l13 13" />' },
 ];
 const FONT_SIZES = [16, 24, 36, 56, 80];
 const ERASER_RADIUS = 10; // ekran pikseli
@@ -153,7 +161,7 @@ rebuildKeymap();
 // ---------- Durum ----------
 
 const styles = {
-  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal', galaxy: 'classic' },
+  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal', galaxy: 'classic', hatch: 'fwd' },
   highlighter: { color: '#ffd400', width: 18 },
   tempHighlighter: { color: '#ffd400', width: 18 },
   shape: { color: '#1f2328', width: 3, fill: 'none' },
@@ -1013,6 +1021,7 @@ canvas.addEventListener('pointerdown', (e) => {
       };
       if (t === 'pen' && st.brush !== 'normal') el.brush = st.brush;
       if (el.brush === 'galaxy' && st.galaxy && st.galaxy !== 'classic') el.galaxy = st.galaxy;
+      if (el.brush === 'hatch' && st.hatch && st.hatch !== 'fwd') el.hatch = st.hatch;
       board.elements.push(el);
       drag = { kind: 'draw', el, straight: false, anchor: 0 };
       autoHideProps();
@@ -1374,8 +1383,9 @@ function endPointer(e) {
           break;
         }
       }
-      // Oklu fırçalar şekle çevrilmez: ok ucu yönü anlamını yitirirdi.
-      if (!d.el.highlighter && d.el.brush !== 'arrow' && d.el.brush !== 'dashedarrow' && !d.usedStraight && styles.pen.toShape) convertToShape(d.el);
+      // Oklu fırçalar şekle çevrilmez: ok ucu yönü anlamını yitirirdi. Taralı alan da elle
+      // çizildiği gibi kalır; şeklin içini izlemesi gerekir.
+      if (!d.el.highlighter && d.el.brush !== 'arrow' && d.el.brush !== 'dashedarrow' && d.el.brush !== 'hatch' && !d.usedStraight && styles.pen.toShape) convertToShape(d.el);
       changed();
       break;
     case 'compassSet':
@@ -2616,6 +2626,11 @@ function propsContext() {
       ctx.brushes = true;
       const b = sel[0].brush || 'normal';
       ctx.values.brush = sel.every((el) => (el.brush || 'normal') === b) ? b : null;
+      if (sel.every((el) => el.brush === 'hatch')) {
+        ctx.hatch = true;
+        const h = sel[0].hatch || 'fwd';
+        ctx.values.hatch = sel.every((el) => (el.hatch || 'fwd') === h) ? h : null;
+      }
     }
     if (has('rect', 'ellipse', 'polygon')) {
       ctx.fill = true;
@@ -2642,7 +2657,8 @@ function propsContext() {
       colorProp: galaxy ? 'galaxy' : 'color',
       widths: brush.id === 'tape' ? TAPE_WIDTHS : PEN_WIDTHS,
       brushes: true,
-      toShape: brush.id !== 'arrow' && brush.id !== 'dashedarrow',
+      hatch: brush.id === 'hatch',
+      toShape: brush.id !== 'arrow' && brush.id !== 'dashedarrow' && brush.id !== 'hatch',
       values: galaxy ? { ...styles.pen, color: styles.pen.galaxy || 'classic' } : styles.pen,
     };
   }
@@ -2695,7 +2711,15 @@ function updateProps() {
   brushRow.classList.toggle('hidden', !c.brushes);
   if (c.brushes) {
     brushRow.innerHTML = BRUSHES.map((b, i) =>
-      `<button class="brush-btn${b.id === v.brush ? ' selected' : ''}" data-brush="${b.id}" title="${b.label} — ${b.title} (Alt+${(i + 1) % 10})"><svg viewBox="0 0 32 16">${b.icon}</svg></button>`,
+      `<button class="brush-btn${b.id === v.brush ? ' selected' : ''}" data-brush="${b.id}" title="${b.label} — ${b.title}${i < 10 ? ` (Alt+${(i + 1) % 10})` : ''}"><svg viewBox="0 0 32 16">${b.icon}</svg></button>`,
+    ).join('');
+  }
+
+  const hatchRow = $('#hatchRow');
+  hatchRow.classList.toggle('hidden', !c.hatch);
+  if (c.hatch) {
+    hatchRow.innerHTML = HATCH_DIRS.map((h) =>
+      `<button class="brush-btn${h.id === (v.hatch || 'fwd') ? ' selected' : ''}" data-hatch="${h.id}" title="${h.label}"><svg viewBox="0 0 32 17" stroke="currentColor" stroke-width="1.6">${h.icon}</svg></button>`,
     ).join('');
   }
 
@@ -2809,6 +2833,10 @@ function applyStyle(prop, value) {
         if (value === 'classic') delete el.galaxy;
         else el.galaxy = value;
       }
+      if (prop === 'hatch' && el.type === 'stroke' && el.brush === 'hatch') {
+        if (value === 'fwd') delete el.hatch;
+        else el.hatch = value;
+      }
       if (prop === 'brush' && el.type === 'stroke' && !el.highlighter) {
         if (value === 'normal') delete el.brush;
         else el.brush = value;
@@ -2856,6 +2884,7 @@ $('#props').addEventListener('click', (e) => {
   else if (b.dataset.font) applyStyle('fontSize', Number(b.dataset.font));
   else if (b.dataset.fill) applyStyle('fill', b.dataset.fill);
   else if (b.dataset.brush) applyStyle('brush', b.dataset.brush);
+  else if (b.dataset.hatch) applyStyle('hatch', b.dataset.hatch);
   else if (b.dataset.arrange) arrange(b.dataset.arrange);
   else if (b.dataset.crop === 'start') startCrop();
   else if (b.dataset.crop === 'apply') applyCrop();
@@ -3518,7 +3547,7 @@ const GENERAL_KEYS = [
   [['Shift', t('tekerlek')], t('Yatay kaydır')], [['Ctrl+=', 'Ctrl+-'], t('Yakınlaştır / uzaklaştır')],
   [['Ctrl+0'], t('%100 yakınlık')], [['Ctrl+1'], t('Tümünü ekrana sığdır')],
   [['Shift', 'Ctrl'], t('Kalemle çizerken basılı tut: dümdüz çizgi')],
-  ...BRUSHES.map((b, i) => [[`Alt+${(i + 1) % 10}`], t('Fırça: {name}', { name: b.label })]),
+  ...BRUSHES.slice(0, 10).map((b, i) => [[`Alt+${(i + 1) % 10}`], t('Fırça: {name}', { name: b.label })]),
   [['Shift'], t('Şekil çizerken: kare / daire, 15° adım')],
   [['Esc', 'Ctrl+Enter'], t('Metin / not yazmayı bitir')],
   [['Enter', 'Esc'], t('Resim kırparken: uygula / vazgeç')],
