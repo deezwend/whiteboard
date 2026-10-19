@@ -10,6 +10,8 @@
 <body>
   <canvas id="board"></canvas>
   <textarea id="editor" spellcheck="false"></textarea>
+  <!-- Yorumu olan nesnelerin köşesindeki rozetler (app.js "Yorumlar") -->
+  <div id="commentPins"></div>
   <input id="imageInput" type="file" accept="image/*,application/pdf,.pdf" multiple hidden />
 
   <!-- Ana araç çubuğu. .tgroup içindeki araçlar tek düğmede toplanır (app.js "Araç grupları"); düğme son
@@ -152,6 +154,7 @@
       <button class="chip" data-arrange="duplicate" title="Çoğalt (Ctrl+D)">Çoğalt</button>
       <button class="chip" data-arrange="rotl" title="Sola 90° döndür (serbest döndürmek için seçimin üstündeki yuvarlak tutamacı sürükle)">↺ 90°</button>
       <button class="chip" data-arrange="rotr" title="Sağa 90° döndür (serbest döndürmek için seçimin üstündeki yuvarlak tutamacı sürükle)">↻ 90°</button>
+      <button class="chip" data-arrange="comment" title="Yorum ekle (Ctrl+Shift+M)">Yorum</button>
       <button class="chip" data-arrange="lock" title="Kilitli nesne taşınmaz, silinmez, tıklamayla seçilmez; çift tıklayınca seçilir (Ctrl+L)">Kilitle</button>
       <button class="chip danger" data-arrange="delete" title="Sil (Delete)">Sil</button>
     </div>
@@ -195,6 +198,7 @@
     <button data-cmd="clear">Tahtayı temizle</button>
     <hr />
     <button id="autoSaveToggle" data-autosave role="menuitemcheckbox" title="Kapalıyken değişiklikler yalnızca Ctrl+S ile kaydedilir">Otomatik kaydet <span class="check"></span></button>
+    <button id="commentsToggle" data-comments-toggle role="menuitemcheckbox" title="Kapalıyken nesnelerin köşesindeki yorum rozetleri gizlenir">Yorumları göster <span class="check"></span></button>
     <button id="studentToggle" data-student role="menuitemcheckbox" title="Açıölçer, pergel, gizleme bandı, koordinat sistemi, kilitleme, formüller ($…$), PDF ve yazdırma">Öğrenci modu <span class="check"></span></button>
     <div class="menu-label">Arka plan deseni</div>
     <div class="row" id="bgPatternRow">
@@ -242,6 +246,21 @@
     <button class="tool" data-search="prev" title="Önceki (Shift+Enter)"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
     <button class="tool" data-search="next" title="Sonraki (Enter)"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
     <button class="tool" data-search="close" title="Kapat (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+
+  <!-- Nesnenin yorumları (Notion'daki gibi): liste, düzenle / sil, çözüldü, yeni yorum -->
+  <div id="commentPop" class="panel hidden">
+    <div class="cp-head">
+      <span class="cp-title">Yorumlar</span>
+      <span id="commentState" class="hidden">Çözüldü</span>
+      <button class="tool" data-comment="resolve" title="Çözüldü olarak işaretle"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+      <button class="tool" data-comment="close" title="Kapat (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <div id="commentList"></div>
+    <div class="cp-compose">
+      <textarea id="commentInput" rows="1" placeholder="Yorum ekle…"></textarea>
+      <button class="tool" data-comment="send" title="Gönder (Enter — alt satır için Shift+Enter)"><svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+    </div>
   </div>
 
   <div id="toast" class="hidden"></div>
@@ -476,6 +495,15 @@
             <ul>
               <li>Panelin alt kenarındaki <b>ok</b> paneli gizler. Gizliyken ok araç çubuğunun hemen altında kalır (yanındaki nokta seçili rengi gösterir); tıklayınca panel geri açılır.</li>
               <li>Okun yanındaki <b>raptiye</b> açıkken (varsayılan) panel yalnızca okla açılıp kapanır ve gizli bırakırsan başka araca geçince de gizli kalır. Raptiye kapalıyken panel tahtaya çizmeye başlayınca kendiliğinden gizlenir, araç değiştirince ya da bir nesne seçince yeniden açılır.</li>
+            </ul>
+
+            <h3>Yorumlar <kbd>Ctrl+Shift+M</kbd></h3>
+            <ul>
+              <li>Notion'daki gibi her nesneye yorum yazabilirsin: tek bir nesne seç, panelden <b>Yorum</b>'a bas ya da <kbd>Ctrl+Shift+M</kbd>. Açılan pencereye yaz, <kbd>Enter</kbd> gönderir (<kbd>Shift+Enter</kbd> alt satır).</li>
+              <li>Yorumu olan nesnenin sağ üst köşesinde sarı bir <b>rozet</b> ve yorum sayısı görünür; rozete tıklamak yorumları açar. Yorumun üzerine gelince <b>düzenle</b> ve <b>sil</b> düğmeleri çıkar.</li>
+              <li><b>✓</b> yorumları <b>çözüldü</b> olarak işaretler ve rozeti gizler. Nesneyi seçip panelden <b>Yorumlar</b>'ı açarak yeniden açabilir ya da yeni yorum yazabilirsin (yeni yorum diziyi yeniden açar).</li>
+              <li>Yorumlar tahtayla birlikte kaydedilir, <kbd>Ctrl+Z</kbd> ile geri alınır ve <kbd>Ctrl+F</kbd> aramasında bulunur. Dışa aktarılan resim ve PDF'lerde görünmez. Çoğaltılan ya da kopyalanan nesneye yorumlar geçmez; kesip yapıştırmak onları taşır.</li>
+              <li>Menüdeki (☰) <b>Yorumları göster</b> kapatılınca rozetler gizlenir (sunum yaparken).</li>
             </ul>
 
             <h3>Tahtada arama <kbd>Ctrl+F</kbd></h3>

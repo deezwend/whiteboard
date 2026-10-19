@@ -175,6 +175,7 @@ const propsUi = { collapsed: false, pinned: true };
 let propsKey = null; // panelin en son gösterdiği bağlam (araç adı, 'select' ya da 'edit')
 // Kapalıyken değişiklikler yalnızca Ctrl+S ile kaydedilir.
 let autoSave = true;
+let showComments = true; // yorum rozetleri görünsün mü (menüdeki "Yorumları göster")
 loadPrefs();
 
 function emptyBoard() {
@@ -214,13 +215,14 @@ function loadPrefs() {
     if (typeof p.autoSave === 'boolean') autoSave = p.autoSave;
     if (typeof p.pdfLock === 'boolean') pdfLock = p.pdfLock;
     if (typeof p.studentMode === 'boolean') studentMode = p.studentMode;
+    if (typeof p.showComments === 'boolean') showComments = p.showComments;
     if (p.exportOpts) Object.assign(exportOpts, p.exportOpts);
   } catch { /* tercihler isteğe bağlı */ }
 }
 
 function savePrefs() {
   try {
-    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick, props: propsUi, autoSave, pdfLock, exportOpts, studentMode }));
+    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick, props: propsUi, autoSave, pdfLock, exportOpts, studentMode, showComments }));
   } catch { /* yoksay */ }
 }
 
@@ -426,6 +428,7 @@ function changed(save = true) {
   requestRender();
   updateUndoButtons();
   updateProps();
+  if (commentFor) renderCommentPop();
   if (save) scheduleSave();
 }
 
@@ -441,6 +444,7 @@ function loadBoard(data) {
   revealedCovers.clear();
   compass = null;
   crop = null;
+  resetComments();
   dirty = false;
   setSaveState(t('Kaydedildi'));
   updateBgUI();
@@ -561,6 +565,8 @@ function render() {
   drawTempStrokes();
   drawOverlay();
   if (editing) positionEditor();
+  updateCommentPins();
+  positionCommentPop();
   $('#zoomLabel').textContent = Math.round(board.view.zoom * 100) + '%';
 }
 
@@ -902,6 +908,7 @@ function toast(msg) {
 
 canvas.addEventListener('pointerdown', (e) => {
   hideMenu();
+  closeComments();
   if (editing) commitEditor();
   pointer = { x: e.clientX, y: e.clientY };
 
@@ -1437,7 +1444,7 @@ function cutWithLasso(lasso) {
     if (el.locked) continue;
     const parts = splitByLasso(el, lasso);
     if (parts && parts.inside.length) {
-      replacements.set(el, [...parts.outside, ...parts.inside]);
+      replacements.set(el, carryComments(el, [...parts.outside, ...parts.inside]));
       picked.push(...parts.inside);
     } else if (!parts && insideLasso(el, lasso)) picked.push(el);
   }
@@ -1625,6 +1632,269 @@ function updateShape(w, shift) {
   }
 }
 
+// ---------- Yorumlar ----------
+// Notion'daki gibi her nesneye bir yorum dizisi eklenebilir: el.comments = [{ id, text, time, edited? }].
+// el.commentsResolved dizinin çözüldüğünü gösterir (rozeti gizlenir; yeni yorum diziyi yeniden açar).
+// Geri al yüzeysel kopyaya dayandığı için dizi ve yorum nesneleri yerinde değiştirilmez, her
+// değişiklik yeni bir dizi atar. Rozetler ve pencere DOM'dadır; dışa aktarılan resimlere girmez.
+
+const pinLayer = $('#commentPins');
+const commentPop = $('#commentPop');
+const commentInput = $('#commentInput');
+const pinNodes = new Map(); // öğe kimliği -> rozet düğmesi
+const commentDrafts = new Map(); // öğe kimliği -> gönderilmemiş yorum
+let commentFor = null; // yorum penceresi açıkken nesnenin kimliği
+let commentEditId = null; // düzenlenen yorumun kimliği
+
+const ICON_COMMENT = '<svg viewBox="0 0 24 24"><path d="M5 5h14a1 1 0 011 1v9a1 1 0 01-1 1h-8l-4 3v-3H5a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>';
+
+const commentsOf = (el) => el.comments || [];
+const commentEl = () => board.elements.find((el) => el.id === commentFor);
+
+function withoutComments(el) {
+  const { comments, commentsResolved, ...rest } = el;
+  return rest;
+}
+
+// Parçalanan (silgi, makas) öğenin yorumları ilk parçasında kalır.
+function carryComments(el, parts) {
+  if (!el.comments || !parts.length) return parts;
+  const first = { ...parts[0], comments: el.comments };
+  if (el.commentsResolved) first.commentsResolved = true;
+  return [first, ...parts.slice(1)];
+}
+
+function setShowComments(v) {
+  showComments = v;
+  savePrefs();
+  updateCommentsToggleUI();
+  requestRender();
+}
+
+function updateCommentsToggleUI() {
+  $('#commentsToggle').setAttribute('aria-checked', String(showComments));
+}
+
+// Açık yorumu olan her nesnenin sağ üst köşesine sayılı bir rozet koyar (her çizimde).
+function updateCommentPins() {
+  const live = new Set();
+  if (showComments) {
+    for (const el of board.elements) {
+      const list = commentsOf(el);
+      if (!list.length || el.commentsResolved || editing?.el.id === el.id) continue;
+      live.add(el.id);
+      let pin = pinNodes.get(el.id);
+      if (!pin) {
+        pin = document.createElement('button');
+        pin.className = 'comment-pin';
+        pin.dataset.id = el.id;
+        pinLayer.append(pin);
+        pinNodes.set(el.id, pin);
+      }
+      if (pin.dataset.n !== String(list.length)) {
+        pin.dataset.n = list.length;
+        pin.innerHTML = `${ICON_COMMENT}<span>${list.length}</span>`;
+      }
+      const last = list[list.length - 1].text;
+      pin.title = last.length > 120 ? last.slice(0, 120) + '…' : last;
+      const r = screenRect(bbox(el));
+      pin.style.transform = `translate(${Math.round(r.x + r.w + 2)}px, ${Math.round(r.y - 24)}px)`;
+      pin.classList.toggle('open', commentFor === el.id);
+    }
+  }
+  for (const [id, pin] of pinNodes) {
+    if (live.has(id)) continue;
+    pin.remove();
+    pinNodes.delete(id);
+  }
+}
+
+pinLayer.addEventListener('click', (e) => {
+  const pin = e.target.closest('.comment-pin');
+  if (!pin) return;
+  if (commentFor === pin.dataset.id) closeComments();
+  else openComments(pin.dataset.id);
+});
+
+function commentOnSelection() {
+  const sel = selectedEls();
+  if (sel.length !== 1) return toast(t('Yorum eklemek için tek bir nesne seç'));
+  if (commentFor === sel[0].id) closeComments();
+  else openComments(sel[0].id);
+}
+
+function openComments(id) {
+  if (!board.elements.some((el) => el.id === id)) return;
+  commitEditor();
+  closeComments();
+  commentFor = id;
+  commentEditId = null;
+  commentPop.classList.remove('hidden');
+  renderCommentPop();
+  commentInput.value = commentDrafts.get(id) || '';
+  fitTextarea(commentInput);
+  const list = $('#commentList');
+  list.scrollTop = list.scrollHeight;
+  commentInput.focus();
+  updateProps();
+  requestRender();
+}
+
+function closeComments() {
+  if (!commentFor) return;
+  const draft = commentInput.value;
+  if (draft.trim()) commentDrafts.set(commentFor, draft);
+  else commentDrafts.delete(commentFor);
+  commentFor = null;
+  commentEditId = null;
+  commentPop.classList.add('hidden');
+  updateProps();
+  requestRender();
+}
+
+// Başka bir tahtaya geçilince pencere ve taslaklar atılır.
+function resetComments() {
+  commentFor = null;
+  commentEditId = null;
+  commentDrafts.clear();
+  commentPop.classList.add('hidden');
+}
+
+function renderCommentPop() {
+  const el = commentEl();
+  if (!el) return closeComments();
+  const list = commentsOf(el);
+  $('#commentList').innerHTML = list.map((c) => (c.id === commentEditId
+    ? `<div class="comment editing" data-id="${c.id}"><textarea class="comment-edit">${escHtml(c.text)}</textarea><div class="comment-hint">${t('Enter: kaydet — Esc: vazgeç')}</div></div>`
+    : `<div class="comment" data-id="${c.id}"><div class="comment-meta"><span title="${new Date(c.time).toLocaleString(locale)}">${relativeTime(c.time)}${c.edited ? t(' · düzenlendi') : ''}</span><span class="comment-actions"><button class="tool" data-comment="edit" title="${t('Düzenle')}">${ICON_RENAME}</button><button class="tool" data-comment="delete" title="${t('Sil')}">${ICON_DELETE}</button></span></div><div class="comment-text">${escHtml(c.text)}</div></div>`),
+  ).join('');
+  const resolved = !!el.commentsResolved;
+  $('#commentState').classList.toggle('hidden', !resolved);
+  const rb = $('[data-comment="resolve"]');
+  rb.classList.toggle('hidden', !list.length);
+  rb.classList.toggle('active', resolved);
+  rb.title = resolved ? t('Yeniden aç') : t('Çözüldü olarak işaretle');
+  commentInput.placeholder = list.length ? t('Yanıtla…') : t('Yorum ekle…');
+  const edit = $('#commentList .comment-edit');
+  if (edit) {
+    fitTextarea(edit);
+    edit.focus();
+    edit.setSelectionRange(edit.value.length, edit.value.length);
+  }
+  positionCommentPop();
+}
+
+// Pencere nesnenin sağında (yer yoksa solunda) durur, ekrandan taşmaz.
+function positionCommentPop() {
+  if (!commentFor) return;
+  const el = commentEl();
+  if (!el) return;
+  const r = screenRect(bbox(el));
+  const w = commentPop.offsetWidth, h = commentPop.offsetHeight, m = 12, top = 64;
+  let x = r.x + r.w + 34;
+  if (x + w > innerWidth - m) x = r.x - w - m;
+  x = Math.max(m, Math.min(innerWidth - w - m, x));
+  const y = Math.max(top, Math.min(innerHeight - h - m, r.y - 24));
+  commentPop.style.left = x + 'px';
+  commentPop.style.top = y + 'px';
+}
+
+function fitTextarea(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 2 + 'px';
+}
+
+// Yorum dizisini tek geri alma adımıyla değiştirir.
+function setComments(el, comments, resolved) {
+  checkpoint();
+  if (comments.length) el.comments = comments;
+  else delete el.comments;
+  if (resolved && comments.length) el.commentsResolved = true;
+  else delete el.commentsResolved;
+  changed();
+}
+
+function sendComment() {
+  const el = commentEl();
+  const text = commentInput.value.trim();
+  if (!el || !text) return;
+  // Çözülmüş diziye yazmak onu yeniden açar.
+  setComments(el, [...commentsOf(el), { id: newId(), text, time: Date.now() }], false);
+  commentInput.value = '';
+  commentDrafts.delete(el.id);
+  fitTextarea(commentInput);
+  const list = $('#commentList');
+  list.scrollTop = list.scrollHeight;
+}
+
+function saveCommentEdit() {
+  const el = commentEl();
+  const ta = $('#commentList .comment-edit');
+  const id = commentEditId;
+  commentEditId = null;
+  if (!el || !ta) return renderCommentPop();
+  const text = ta.value.trim();
+  const old = commentsOf(el).find((c) => c.id === id);
+  if (!old || !text || text === old.text) return renderCommentPop();
+  setComments(el, commentsOf(el).map((c) => (c.id === id ? { ...c, text, edited: Date.now() } : c)), el.commentsResolved);
+}
+
+commentPop.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-comment]');
+  if (!b) return;
+  const el = commentEl();
+  const action = b.dataset.comment;
+  if (action === 'close') return closeComments();
+  if (!el) return;
+  if (action === 'send') return sendComment();
+  if (action === 'resolve') {
+    const resolve = !el.commentsResolved;
+    setComments(el, commentsOf(el), resolve);
+    if (resolve) {
+      closeComments();
+      toast(t('Yorum çözüldü — nesneyi seçip panelden yeniden açabilirsin'));
+    }
+    return;
+  }
+  const id = b.closest('.comment')?.dataset.id;
+  if (action === 'edit') {
+    commentEditId = id;
+    renderCommentPop();
+  } else if (action === 'delete') {
+    setComments(el, commentsOf(el).filter((c) => c.id !== id), el.commentsResolved);
+    toast(t('Yorum silindi — Ctrl+Z ile geri alabilirsin'));
+  }
+});
+
+commentInput.addEventListener('input', () => fitTextarea(commentInput));
+commentInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    sendComment();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeComments();
+  }
+});
+
+const commentList = $('#commentList');
+commentList.addEventListener('input', (e) => {
+  if (e.target.classList.contains('comment-edit')) fitTextarea(e.target);
+});
+commentList.addEventListener('keydown', (e) => {
+  if (!e.target.classList.contains('comment-edit')) return;
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    saveCommentEdit();
+    commentInput.focus();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    commentEditId = null;
+    renderCommentPop();
+    commentInput.focus();
+  }
+});
+
 // ---------- Tahtada arama (Ctrl+F) ----------
 // Metin, not, Obsidian bölümü başlığı ve fonksiyon ifadelerinde arar; eşleşmeler okunma sırasıyla
 // (yukarıdan aşağı) gezilir, bulunan nesne ekranın ortasına getirilir.
@@ -1632,7 +1902,12 @@ function updateShape(w, shift) {
 const searchBar = $('#searchBar');
 const searchInput = $('#searchInput');
 
+// Nesnenin yorumlarında da arar.
 function searchText(el) {
+  return [ownText(el), ...commentsOf(el).map((c) => c.text)].join('\n');
+}
+
+function ownText(el) {
   if (el.type === 'text' || el.type === 'note') return el.text;
   if (el.obsidian) return el.obsidian.title || '';
   if (el.type === 'axes') return (el.fns || []).map((f) => f.expr).join(' ');
@@ -2087,7 +2362,7 @@ function eraseAlong(a, b) {
   // Kısmi modda her öğe kalan parçalarıyla değiştirilir; parçalanamayanlar bütün silinir.
   const replacements = new Map();
   for (const el of hits) {
-    replacements.set(el, (mode === 'partial' && splitByEraser(el, samples, r)) || []);
+    replacements.set(el, carryComments(el, (mode === 'partial' && splitByEraser(el, samples, r)) || []));
   }
   board.elements = board.elements.flatMap((el) => replacements.get(el) ?? [el]);
   pruneSelection();
@@ -2490,6 +2765,14 @@ function updateProps() {
   lockChip.classList.toggle('selected', !!v.locked);
   lockChip.classList.toggle('hidden', !studentMode && !v.locked);
   $('#arrangeRow').classList.toggle('hidden', !c.arrange);
+  const one = c.arrange && selection.size === 1 ? selectedEls()[0] : null;
+  const commentChip = $('[data-arrange="comment"]');
+  commentChip.classList.toggle('hidden', !one);
+  if (one) {
+    const n = commentsOf(one).length;
+    commentChip.textContent = n ? t('Yorumlar ({n})', { n }) : t('Yorum');
+    commentChip.classList.toggle('selected', commentFor === one.id);
+  }
   for (const b of document.querySelectorAll('[data-arrange^="rot"]')) b.classList.toggle('hidden', !c.rotatable);
   $('#cropRow').classList.toggle('hidden', !c.crop);
   $('#imageRow').classList.toggle('hidden', !c.cropable);
@@ -2753,6 +3036,7 @@ function arrange(action) {
   if (action === 'delete') return deleteSelection();
   if (action === 'duplicate') return duplicateSelection();
   if (action === 'lock') return toggleLock();
+  if (action === 'comment') return commentOnSelection();
   if (action === 'rotl') return rotateSelection(-Math.PI / 2);
   if (action === 'rotr') return rotateSelection(Math.PI / 2);
   checkpoint();
@@ -2824,7 +3108,7 @@ function duplicateSelection() {
   const sel = selectedEls();
   if (!sel.length) return;
   const d = 20 / board.view.zoom;
-  insertCopies(sel, { x: d, y: d });
+  insertCopies(sel.map(withoutComments), { x: d, y: d });
 }
 
 // ---------- Araç çubuğu ----------
@@ -3037,6 +3321,8 @@ $('#menu').addEventListener('click', (e) => {
     setAutoSave(!autoSave);
   } else if ('student' in b.dataset) {
     setStudentMode(!studentMode);
+  } else if ('commentsToggle' in b.dataset) {
+    setShowComments(!showComments);
   } else if (b.dataset.bg) {
     board.background = b.dataset.bg;
     updateBgUI();
@@ -3222,6 +3508,7 @@ const TOOL_LABELS = {
 const GENERAL_KEYS = [
   [['Ctrl+Z'], t('Geri al')], [['Ctrl+Y', 'Ctrl+Shift+Z'], t('Yinele')],
   [['Ctrl+C', 'Ctrl+X', 'Ctrl+V'], t('Kopyala / kes / yapıştır')], [['Ctrl+D'], t('Seçileni çoğalt')],
+  [['Ctrl+Shift+M'], t('Seçili nesneye yorum ekle / yorumlarını aç')],
   [['Ctrl+F'], t('Tahtada ara (Enter: sonraki, Shift+Enter: önceki)')],
   [['Ctrl+A'], t('Tümünü seç (kilitliler hariç)')], [['Delete', 'Backspace'], t('Seçileni sil')],
   [['Ctrl+L'], t('Seçileni kilitle / kilidini aç')], [[t('Çift tık')], t('Kilitli nesneyi seç; bandı aç / kapat')],
@@ -4148,7 +4435,8 @@ document.addEventListener('drop', (e) => {
 document.addEventListener('copy', (e) => {
   if (editing || isTyping(e) || !selection.size || overlayOpen()) return;
   const sel = selectedEls();
-  e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel));
+  // Kopya yorumsuzdur; kes-yapıştır ise nesneyi yorumlarıyla taşır.
+  e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel.map(withoutComments)));
   e.clipboardData.setData('text/plain', sel.filter((el) => el.text).map((el) => el.text).join('\n\n'));
   e.preventDefault();
 });
@@ -4252,6 +4540,7 @@ window.addEventListener('keydown', (e) => {
       updateProps();
       requestRender();
     } else if (k === 'd') { e.preventDefault(); duplicateSelection(); }
+    else if (k === 'm' && e.shiftKey) { e.preventDefault(); commentOnSelection(); }
     else if (k === 'l') { e.preventDefault(); if (studentMode || selectedEls().some((el) => el.locked)) toggleLock(); }
     else if ((k === 'c' || k === 'x') && selection.size) {
       // Seçili metin olmasa da "copy" olayının tetiklenmesini garanti eder.
@@ -4272,6 +4561,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     deleteSelection();
   } else if (e.key === 'Escape') {
+    if (commentFor) return closeComments();
     selection.clear();
     if (activeTool() === 'compass') compass = null;
     closeFlyout();
@@ -4322,6 +4612,7 @@ async function init() {
   setTool(tool);
   updateBgUI();
   updateAutoSaveUI();
+  updateCommentsToggleUI();
   applyStudentMode();
   const res = await api.loadInitial();
   if (res.data) loadBoard(res.data);

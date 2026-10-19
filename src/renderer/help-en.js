@@ -134,6 +134,15 @@ export const HELP_EN = {
       <li>While the <b>pin</b> next to the arrow is on (the default), the panel opens and closes only with the arrow, and if you leave it hidden it stays hidden when you switch tools. With the pin off, the panel hides itself when you start drawing and reappears when you change tools or select an object.</li>
     </ul>
 
+    <h3>Comments <kbd>Ctrl+Shift+M</kbd></h3>
+    <ul>
+      <li>Like in Notion, you can comment on any object: select a single object and press <b>Comment</b> in the panel or <kbd>Ctrl+Shift+M</kbd>. Type in the popup; <kbd>Enter</kbd> sends (<kbd>Shift+Enter</kbd> for a new line).</li>
+      <li>An object with comments shows a yellow <b>badge</b> with the comment count at its top-right corner; click it to open the comments. Hover a comment to <b>edit</b> or <b>delete</b> it.</li>
+      <li><b>✓</b> marks the comments as <b>resolved</b> and hides the badge. Select the object and open <b>Comments</b> from the panel to reopen them, or write a new comment (a new comment reopens the thread).</li>
+      <li>Comments are saved with the board, can be undone with <kbd>Ctrl+Z</kbd> and are found by <kbd>Ctrl+F</kbd>. They don't appear in exported images and PDFs. Duplicated or copied objects don't take the comments along; cut and paste moves them.</li>
+      <li>Turning off <b>Show comments</b> in the menu (☰) hides the badges (handy when presenting).</li>
+    </ul>
+
     <h3>Searching the board <kbd>Ctrl+F</kbd></h3>
     <ul>
       <li>A search box opens at the top right. It searches text, sticky notes, the titles of Obsidian sections and the functions in coordinate systems.</li>
