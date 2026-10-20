@@ -3,6 +3,7 @@
 export const FONT_FAMILY = '"Segoe UI", system-ui, sans-serif';
 export const LINE_HEIGHT = 1.25;
 export const NOTE_PADDING = 14;
+export const CELL_PAD = 8; // tablo hücresinin iç boşluğu
 
 let uid = 0;
 export function newId() {
@@ -69,7 +70,7 @@ export function bbox(el) {
 // açıyı `rot` (radyan) alanında taşır. Koordinat sistemi döndürülmez.
 
 export function canRotate(el) {
-  return el.type !== 'axes';
+  return el.type !== 'axes' && el.type !== 'table';
 }
 
 export function rotatePoint(x, y, cx, cy, a) {
@@ -94,6 +95,7 @@ export function rotateAround(el, orig, cx, cy, a) {
   switch (el.type) {
     case 'stroke':
       el.points = orig.points.map(([x, y, p]) => [...rotatePoint(x, y, cx, cy, a), p]);
+      if (orig.cuts) el.cuts = orig.cuts.map(([x, y, r]) => [...rotatePoint(x, y, cx, cy, a), r]);
       break;
     case 'polygon':
       el.points = orig.points.map(([x, y]) => rotatePoint(x, y, cx, cy, a));
@@ -178,7 +180,7 @@ export function hitTest(el, x, y, tol) {
       const r = el.width / 2 + tol;
       const pts = el.points;
       // Taralı alan dolgulu şekil gibi içinden de tutulur.
-      if (el.brush === 'hatch' && pts.length > 2 && pointInPolygon(x, y, pts)) return true;
+      if (el.brush === 'hatch' && pts.length > 2 && pointInPolygon(x, y, pts) && !inHatchCut(el, x, y)) return true;
       if (pts.length === 1) return Math.hypot(x - pts[0][0], y - pts[0][1]) <= r;
       for (let i = 1; i < pts.length; i++) {
         if (distToSeg(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) <= r) return true;
@@ -264,7 +266,7 @@ export function insideLasso(el, lasso) {
 }
 
 // Öğenin çizgisini nokta listesine çevirir (kısmi silgi için). Dolgulu şekiller, taralı
-// alanlar ve oklar parçalanamaz; bunlar için null döner ve öğe bütün olarak silinir.
+// alanlar ve oklar parçalanamaz; bunlar için null döner (taralı alan ayrıca oyularak silinir).
 function toPolyline(el) {
   switch (el.type) {
     case 'stroke':
@@ -311,9 +313,44 @@ function densify(pts, step) {
   return out;
 }
 
+// Taralı alanda silinen yer: (x, y) merkezli r yarıçaplı dairelerden (el.cuts) birinin içinde mi.
+export function inHatchCut(el, x, y) {
+  return !!el.cuts && el.cuts.some(([cx, cy, r]) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r);
+}
+
+// Taralı alan kısmi silgide parçalanmaz; silginin geçtiği daireler alandan oyulur (el.cuts).
+// Alanın tamamı silindiyse boş liste döner.
+function eraseHatch(el, samples, r) {
+  const pts = el.points;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of pts) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  // Yalnızca alana değen daireler saklanır.
+  const add = samples.filter((s) => s.x + r >= minX && s.x - r <= maxX && s.y + r >= minY && s.y - r <= maxY)
+    .map((s) => [s.x, s.y, r]);
+  if (!add.length) return [el];
+  const out = cloneEl(el);
+  out.cuts = [...(el.cuts || []), ...add];
+  // Alanda silinmemiş bir yer kalmadıysa öğe tamamen silinir.
+  const step = Math.max((maxX - minX) / 60, (maxY - minY) / 60, 1);
+  for (let x = minX + step / 2; x < maxX; x += step) {
+    for (let y = minY + step / 2; y < maxY; y += step) {
+      if (pointInPolygon(x, y, pts) && !inHatchCut(out, x, y)) return [out];
+    }
+  }
+  return [];
+}
+
 // Kısmi silgi: silginin geçtiği yerleri çıkarıp kalan parçaları ayrı çizgiler olarak döndürür.
 // Parçalanamayan öğeler için null döner.
 export function splitByEraser(el, samples, r) {
+  if (el.type === 'stroke' && el.brush === 'hatch' && !el.highlighter) {
+    return el.points.length > 2 ? eraseHatch(el, samples, r) : null;
+  }
   let poly = toPolyline(el);
   if (!poly) return null;
   if (el.rot) {
@@ -412,12 +449,14 @@ export function splitByLasso(el, lasso) {
 export function cloneEl(el) {
   const c = { ...el };
   if (el.points) c.points = el.points.map((p) => p.slice());
+  if (el.cuts) c.cuts = el.cuts.map((p) => p.slice());
   return c;
 }
 
 export function translate(el, dx, dy) {
   if (el.type === 'stroke') {
     el.points = el.points.map(([x, y, p]) => [x + dx, y + dy, p]);
+    if (el.cuts) el.cuts = el.cuts.map(([x, y, r]) => [x + dx, y + dy, r]);
   } else if (el.type === 'polygon') {
     el.points = el.points.map(([x, y]) => [x + dx, y + dy]);
   } else if (el.type === 'line' || el.type === 'arrow') {
@@ -437,6 +476,7 @@ export function scaleFrom(el, orig, ax, ay, sx, sy) {
     case 'stroke':
       el.points = orig.points.map(([x, y, p]) => [fx(x), fy(y), p]);
       el.width = Math.max(0.5, orig.width * uniform);
+      if (orig.cuts) el.cuts = orig.cuts.map(([x, y, r]) => [fx(x), fy(y), r * uniform]);
       break;
     case 'polygon':
       el.points = orig.points.map(([x, y]) => [fx(x), fy(y)]);
@@ -456,6 +496,13 @@ export function scaleFrom(el, orig, ax, ay, sx, sy) {
       if (sy < 0) el.y -= el.h;
       break;
     }
+    case 'table': {
+      // Sütun genişlikleri ve satır yükseklikleri oranla değişir; diziler yeniden atanır (geri alma).
+      Object.assign(el, normRect(fx(orig.x), fy(orig.y), orig.w * sx, orig.h * sy));
+      el.colW = orig.colW.map((c) => c * Math.abs(sx));
+      el.rowH = orig.rowH.map((r) => r * Math.abs(sy));
+      break;
+    }
     case 'axes': {
       // Kutu ve başlangıç noktası birlikte ölçeklenir; birim uzunluk oranla büyür.
       Object.assign(el, normRect(fx(orig.x), fy(orig.y), orig.w * sx, orig.h * sy));
@@ -473,4 +520,63 @@ export function scaleFrom(el, orig, ax, ay, sx, sy) {
       }
     }
   }
+}
+
+
+// ---------- Hazır şekiller ----------
+// Üçgen, eşkenar dörtgen, yıldız gibi şekiller çokgen (polygon) öğesi olarak çizilir; noktaları
+// sürüklenen kutuya göre üretilir. Çizildikten sonra sıradan çokgen gibi davranırlar.
+
+export const POLY_SHAPES = ['triangle', 'rtriangle', 'diamond', 'pentagon', 'hexagon', 'star', 'bubble'];
+
+// Noktaları kutunun tamamını dolduracak şekilde ölçekler.
+function fitBox(pts, X, Y, W, H) {
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  const kx = W / (Math.max(...xs) - x0 || 1), ky = H / (Math.max(...ys) - y0 || 1);
+  return pts.map(([x, y]) => [X + (x - x0) * kx, Y + (y - y0) * ky]);
+}
+
+// n köşeli düzgün çokgen (inner verilirse 2n köşeli yıldız); ilk köşe `start` açısında.
+function regular(n, start, inner = 0) {
+  const pts = [];
+  const k = inner ? 2 * n : n;
+  for (let i = 0; i < k; i++) {
+    const a = start + (i * Math.PI * 2) / k;
+    const r = inner && i % 2 ? inner : 1;
+    pts.push([r * Math.cos(a), r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+export function shapePoints(kind, x, y, w, h) {
+  const { x: X, y: Y, w: W, h: H } = normRect(x, y, w, h);
+  const cx = X + W / 2, cy = Y + H / 2;
+  switch (kind) {
+    case 'triangle': return [[cx, Y], [X + W, Y + H], [X, Y + H]];
+    case 'rtriangle': return [[X, Y], [X + W, Y + H], [X, Y + H]];
+    case 'diamond': return [[cx, Y], [X + W, cy], [cx, Y + H], [X, cy]];
+    case 'pentagon': return fitBox(regular(5, -Math.PI / 2), X, Y, W, H);
+    case 'hexagon': return fitBox(regular(6, 0), X, Y, W, H);
+    case 'star': return fitBox(regular(5, -Math.PI / 2, 0.42), X, Y, W, H);
+    case 'bubble': {
+      // Konuşma balonu: yuvarlak köşeli gövde ve sol altta kuyruk.
+      const bh = H * 0.78;
+      const r = Math.min(W, bh) * 0.2;
+      const pts = [];
+      const arc = (ax, ay, a0) => {
+        for (let i = 0; i <= 6; i++) {
+          const a = a0 + (i / 6) * (Math.PI / 2);
+          pts.push([ax + r * Math.cos(a), ay + r * Math.sin(a)]);
+        }
+      };
+      arc(X + W - r, Y + r, -Math.PI / 2);
+      arc(X + W - r, Y + bh - r, 0);
+      pts.push([X + W * 0.4, Y + bh], [X + W * 0.14, Y + H], [X + W * 0.24, Y + bh]);
+      arc(X + r, Y + bh - r, Math.PI / 2);
+      arc(X + r, Y + r, Math.PI);
+      return pts;
+    }
+  }
+  return [[X, Y], [X + W, Y], [X + W, Y + H], [X, Y + H]];
 }

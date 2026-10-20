@@ -1,9 +1,11 @@
 import {
   newId, bbox, unionBBox, hitTest, cloneEl, translate, scaleFrom,
-  rotateAround, canRotate, resizeBox, insideLasso, splitByEraser, splitByLasso, NOTE_PADDING, rectsIntersect,
+  rotateAround, canRotate, resizeBox, insideLasso, splitByEraser, splitByLasso, NOTE_PADDING, CELL_PAD, rectsIntersect,
+  POLY_SHAPES, shapePoints,
 } from './geometry.js';
 import {
-  drawElement, drawBackground, measureText, wrappedHeight, setImageLoadCallback, revealedCovers, renderOpts, getImage,
+  drawElement, drawBackground, measureText, wrappedHeight, listIndent, setImageLoadCallback, revealedCovers, renderOpts, getImage,
+  LINK_SIZE,
 } from './render.js';
 import { recognizeShape, shapeToPoints } from './recognize.js';
 import { createRuler, rulerHit, nearEdge, projectOnEdge, snapAngle, drawRuler } from './ruler.js';
@@ -92,9 +94,20 @@ const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
 const SELECT_COLOR = '#4a7cf0';
 const LOCK_COLOR = '#e8590c';
+const GUIDE_COLOR = '#e8368f'; // taşırken çıkan hizalama kılavuzları
+const SNAP_PX = 6; // kılavuzun yapıştığı uzaklık (ekran pikseli)
+// Metin biçimi alanları (yazı, not ve tablo öğelerinde; yalnızca varsayılandan farklıysa yazılır).
+const FMT_PROPS = ['bold', 'italic', 'underline', 'align', 'list'];
+const TEXT_TYPES = ['text', 'note', 'table'];
+// Çıkartma aracının emojileri.
+const STICKERS = ['👍', '👎', '❤️', '⭐', '🔥', '🎉', '✅', '❌', '❓', '❗', '💡', '📌', '🎯', '🏆', '⚠️', '💯',
+  '😀', '😂', '😍', '😮', '😢', '😡', '🤔', '👏', '🙌', '💪', '👀', '🚀', '⏰', '📅', '📝', '📚'];
+// Adresin tamamı bir web bağlantısıysa yapıştırınca bağlantı kartı olur.
+const URL_RE = /^https?:\/\/[^\s]+$/i;
+const IMAGE_URL_RE = /\.(png|jpe?g|gif|webp|bmp|avif)(?:[?#]|$)/i;
 const CLIP_MIME = 'application/x-beyaztahta';
 
-const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow', 'compass'];
+const SHAPE_TOOLS = ['rect', 'ellipse', 'line', 'arrow', 'compass', ...POLY_SHAPES];
 // Araç kısayolları — Microsoft Whiteboard'daki gibi her araç tek tuşla seçilir; ayrıca üst
 // sıradaki sayı tuşları (1-9, 0) en sık kullanılan araçlara doğrudan erişir. 'key' düğmenin
 // köşesinde rozet olarak görünür, 'num' hızlı sayı tuşu, 'alt' ise eski alışkanlık için yedektir.
@@ -116,12 +129,16 @@ const SHORTCUTS = [
   { target: 'text', key: 't' },
   { target: 'note', key: 'n' },
   { target: 'cover', key: 'k' },
+  { target: 'sticker', key: 'm' },
   { target: 'image', key: 'i' },
   { target: 'obsidian', key: 'b' },
+  { target: 'table', key: 'y' },
+  { target: 'template', key: 'j' },
+  { target: 'link', key: 'f' },
   { target: 'axes', key: 'x' },
 ];
 // Bunlar birer araç değil eylemdir; kısayol da bunları runAction'a yönlendirir.
-const ACTION_TARGETS = ['ruler', 'protractor', 'image', 'obsidian', 'axes'];
+const ACTION_TARGETS = ['ruler', 'protractor', 'image', 'obsidian', 'axes', 'table', 'template', 'link'];
 // Yalnızca Öğrenci modu açıkken kullanılabilen araçlar ve komutlar.
 const STUDENT_TARGETS = ['protractor', 'compass', 'cover', 'axes'];
 const STUDENT_COMMANDS = ['exportPdf', 'print', 'unlockAll', 'coversHide', 'coversShow'];
@@ -167,6 +184,7 @@ const styles = {
   shape: { color: '#1f2328', width: 3, fill: 'none' },
   text: { color: '#1f2328', fontSize: 24 },
   note: { color: '#fff3a3', fontSize: 20 },
+  sticker: { emoji: '👍' },
   cover: { color: '#4a7cf0' },
   laser: { color: '#ff2d2d' },
   eraser: { mode: 'stroke', all: false }, // mode: 'stroke' (bütün çizgi) | 'partial' (kısmi)
@@ -185,6 +203,18 @@ let propsKey = null; // panelin en son gösterdiği bağlam (araç adı, 'select
 let autoSave = true;
 let showComments = true; // yorum rozetleri görünsün mü (menüdeki "Yorumları göster")
 loadPrefs();
+
+// Araç ayarındaki metin biçiminden yeni öğeye yalnızca varsayılandan farklı olanlar yazılır.
+function fmtOf(st) {
+  const out = {};
+  for (const k of FMT_PROPS) if (st[k] && !(k === 'align' && st[k] === 'left')) out[k] = st[k];
+  return out;
+}
+
+function setFmt(el, prop, value) {
+  if (!value || (prop === 'align' && value === 'left')) delete el[prop];
+  else el[prop] = value;
+}
 
 function emptyBoard() {
   return { version: 1, background: 'grid', bgColor: '#ffffff', view: { x: 0, y: 0, zoom: 1 }, elements: [] };
@@ -476,7 +506,7 @@ function syncMath() {
     if (!MATH_RE.test(el.text)) {
       if (el.math) {
         delete el.math;
-        const m = measureText(el.text, el.fontSize);
+        const m = measureText(el.text, el.fontSize, el);
         resizeBox(el, m.w, m.h);
       }
       continue;
@@ -549,7 +579,8 @@ function drawScene(target, skip) {
   c.setTransform(dpr * v.zoom, 0, 0, dpr * v.zoom, dpr * v.x, dpr * v.y);
   const editingId = editing?.el.id;
   for (const el of board.elements) {
-    if (el !== skip) drawElement(c, el, el.id === editingId);
+    // Tablo hücresi düzenlenirken yalnızca o hücrenin yazısı gizlenir.
+    if (el !== skip) drawElement(c, el, el.id === editingId && (editing.cell || true));
   }
 }
 
@@ -613,10 +644,12 @@ function drawOverlay() {
   } else if (sel.length && !editing) {
     ctx.strokeStyle = SELECT_COLOR;
     ctx.lineWidth = 1;
-    if (sel.length > 1) {
+    // Birden fazla birim (tek nesne ya da grup) seçiliyse her birinin çerçevesi kesikli çizilir.
+    const units = unitsOf(sel);
+    if (units.length > 1) {
       ctx.setLineDash([4, 3]);
-      for (const el of sel) {
-        const r = screenRect(bbox(el));
+      for (const u of units) {
+        const r = screenRect(u.b);
         ctx.strokeRect(r.x, r.y, r.w, r.h);
       }
       ctx.setLineDash([]);
@@ -677,6 +710,7 @@ function drawOverlay() {
     ctx.setLineDash([]);
   }
 
+  if (drag?.kind === 'move' && drag.guides) drawGuides(drag.guides);
   if (ruler) drawRuler(ctx, ruler);
   if (protractor) drawProtractor(ctx, protractor);
   if (activeTool() === 'compass') drawCompass();
@@ -692,6 +726,28 @@ function drawOverlay() {
     ctx.fill();
     ctx.stroke();
   }
+}
+
+// Taşırken yapışılan kenar / orta çizgileri.
+function drawGuides(guides) {
+  ctx.save();
+  ctx.strokeStyle = GUIDE_COLOR;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  for (const g of guides) {
+    if (g.x !== undefined) {
+      const a = toScreen(g.x, g.y0), b = toScreen(g.x, g.y1);
+      ctx.moveTo(Math.round(a.x) + 0.5, a.y);
+      ctx.lineTo(Math.round(b.x) + 0.5, b.y);
+    } else {
+      const a = toScreen(g.x0, g.y), b = toScreen(g.x1, g.y);
+      ctx.moveTo(a.x, Math.round(a.y) + 0.5);
+      ctx.lineTo(b.x, Math.round(b.y) + 0.5);
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 // Döndürme tutamacı: içinde dönen ok bulunan yuvarlak düğme.
@@ -759,6 +815,161 @@ function drawRotateOverlay(sel) {
 
 function selectedEls() {
   return board.elements.filter((el) => selection.has(el.id));
+}
+
+// ---------- Gruplar ----------
+// Gruplanan nesneler aynı groupId'yi taşır. Tıklama, Shift+tık ve kement grubu bütün olarak seçer;
+// Ctrl+tık gruptaki tek nesneyi seçer. Hizalama ve dağıtma her grubu tek birim sayar.
+
+function groupMates(el) {
+  return el.groupId ? board.elements.filter((e) => e.groupId === el.groupId && !e.locked) : [el];
+}
+
+// Seçimde bir grubun herhangi bir üyesi varsa grubun tamamını ekler.
+function expandGroups(ids) {
+  const gids = new Set();
+  for (const el of board.elements) if (el.groupId && ids.has(el.id)) gids.add(el.groupId);
+  if (!gids.size) return ids;
+  const out = new Set(ids);
+  for (const el of board.elements) if (el.groupId && gids.has(el.groupId) && !el.locked) out.add(el.id);
+  return out;
+}
+
+// Nesneleri birimlere ayırır: her grup bir birim, gruba girmeyen her nesne bir birim.
+function unitsOf(els) {
+  const map = new Map();
+  for (const el of els) {
+    const k = el.groupId || el.id;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(el);
+  }
+  return [...map.values()].map((list) => ({ els: list, b: unionBBox(list) }));
+}
+
+function groupSelection() {
+  const sel = selectedEls().filter((el) => !el.locked);
+  if (unitsOf(sel).length < 2) return toast(t('Gruplamak için en az iki nesne seç'));
+  checkpoint();
+  const gid = newId();
+  for (const el of sel) el.groupId = gid;
+  changed();
+  toast(t('{n} nesne gruplandı — gruptan tek nesne seçmek için Ctrl+tık', { n: sel.length }));
+}
+
+function ungroupSelection() {
+  const sel = selectedEls().filter((el) => el.groupId);
+  if (!sel.length) return toast(t('Seçimde grup yok'));
+  checkpoint();
+  for (const el of sel) delete el.groupId;
+  changed();
+  toast(t('Grup çözüldü'));
+}
+
+// Ctrl+Shift+G: seçim tek bir grupsa çözer, değilse gruplar.
+function toggleGroup() {
+  const sel = selectedEls();
+  if (sel.length && sel[0].groupId && sel.every((el) => el.groupId === sel[0].groupId)) ungroupSelection();
+  else groupSelection();
+}
+
+// ---------- Hizalama ve dağıtma ----------
+// Seçili birimler (grup ya da tek nesne) seçimin çerçevesine göre hizalanır; dağıtmada aralarındaki
+// boşluklar eşitlenir, ızgarada okuma sırasıyla düzenli satır ve sütunlara dizilir.
+
+function alignSelection(how) {
+  const units = unitsOf(selectedEls().filter((el) => !el.locked));
+  const dist = how === 'distH' || how === 'distV';
+  if (units.length < (dist ? 3 : 2)) {
+    return toast(dist ? t('Dağıtmak için en az üç nesne seç') : t('Hizalamak için en az iki nesne seç'));
+  }
+  const all = unionBBox(units.flatMap((u) => u.els));
+  const move = (u, dx, dy) => {
+    for (const el of u.els) translate(el, dx, dy);
+  };
+  checkpoint();
+  if (dist) {
+    const h = how === 'distH';
+    const key = h ? 'x' : 'y', size = h ? 'w' : 'h';
+    const list = [...units].sort((a, b) => a.b[key] + a.b[size] / 2 - (b.b[key] + b.b[size] / 2));
+    const gap = (all[size] - list.reduce((sum, u) => sum + u.b[size], 0)) / (list.length - 1);
+    let pos = all[key];
+    for (const u of list) {
+      const d = pos - u.b[key];
+      move(u, h ? d : 0, h ? 0 : d);
+      pos += u.b[size] + gap;
+    }
+  } else if (how === 'grid') {
+    arrangeGrid(units, all, move);
+  } else {
+    for (const { b, ...u } of units) {
+      const dx = how === 'left' ? all.x - b.x
+        : how === 'right' ? all.x + all.w - b.x - b.w
+        : how === 'hcenter' ? all.x + all.w / 2 - b.x - b.w / 2 : 0;
+      const dy = how === 'top' ? all.y - b.y
+        : how === 'bottom' ? all.y + all.h - b.y - b.h
+        : how === 'vcenter' ? all.y + all.h / 2 - b.y - b.h / 2 : 0;
+      move(u, dx, dy);
+    }
+  }
+  changed();
+}
+
+// Birimleri okuma sırasına göre (yukarıdan aşağı, soldan sağa) eşit hücreli bir ızgaraya dizer.
+function arrangeGrid(units, all, move) {
+  const cols = Math.ceil(Math.sqrt(units.length));
+  const byY = [...units].sort((a, b) => a.b.y + a.b.h / 2 - (b.b.y + b.b.h / 2));
+  const order = [];
+  for (let i = 0; i < byY.length; i += cols) order.push(...byY.slice(i, i + cols).sort((a, b) => a.b.x - b.b.x));
+  const cw = Math.max(...units.map((u) => u.b.w));
+  const ch = Math.max(...units.map((u) => u.b.h));
+  const gap = Math.max(16, Math.min(cw, ch) * 0.1);
+  order.forEach((u, i) => {
+    const x = all.x + (i % cols) * (cw + gap);
+    const y = all.y + Math.floor(i / cols) * (ch + gap);
+    move(u, x - u.b.x, y - u.b.y);
+  });
+}
+
+// Taşıma başında: taşınan nesnelerin ilk hâlleri ve yapışılabilecek diğer nesnelerin (ekrandakiler) kutuları.
+function startMoveSnap() {
+  const moving = selectedEls().filter((el) => !el.locked);
+  drag.orig = new Map(moving.map((el) => [el, { ...el }]));
+  drag.b0 = unionBBox(moving);
+  const a = toWorld(0, 0), z = toWorld(innerWidth, innerHeight);
+  const view = { x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y };
+  drag.targets = board.elements
+    .filter((el) => !selection.has(el.id))
+    .map(bbox)
+    .filter((b) => rectsIntersect(b, view))
+    .slice(-400);
+}
+
+// Taşınan kutunun kenarlarını ve ortasını, diğer nesnelerin kenar ve ortalarına yaklaşınca yapıştırır.
+function snapMove(dx, dy) {
+  const b = drag.b0;
+  if (!b || !drag.targets.length) return { dx: 0, dy: 0, guides: null };
+  const tol = SNAP_PX / board.view.zoom;
+  const lines = (r, k, size) => [r[k], r[k] + r[size] / 2, r[k] + r[size]];
+  const best = (k, size, d) => {
+    let hit = null;
+    const mine = lines(b, k, size).map((v) => v + d);
+    for (const tb of drag.targets) {
+      for (const tv of lines(tb, k, size)) {
+        for (const mv of mine) {
+          const diff = tv - mv;
+          if (Math.abs(diff) <= tol && (!hit || Math.abs(diff) < Math.abs(hit.diff))) hit = { diff, v: tv, tb };
+        }
+      }
+    }
+    return hit;
+  };
+  const hx = best('x', 'w', dx);
+  const hy = best('y', 'h', dy);
+  const nb = { x: b.x + dx + (hx?.diff || 0), y: b.y + dy + (hy?.diff || 0), w: b.w, h: b.h };
+  const guides = [];
+  if (hx) guides.push({ x: hx.v, y0: Math.min(nb.y, hx.tb.y), y1: Math.max(nb.y + nb.h, hx.tb.y + hx.tb.h) });
+  if (hy) guides.push({ y: hy.v, x0: Math.min(nb.x, hy.tb.x), x1: Math.max(nb.x + nb.w, hy.tb.x + hy.tb.w) });
+  return { dx: hx?.diff || 0, dy: hy?.diff || 0, guides: guides.length ? guides : null };
 }
 
 function isSingleLine(sel) {
@@ -904,12 +1115,12 @@ function scheduleViewSave() {
 }
 
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, ms = 2200) {
   const t = $('#toast');
   t.textContent = msg;
   t.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), ms);
 }
 
 // ---------- İşaretçi olayları ----------
@@ -1073,11 +1284,15 @@ canvas.addEventListener('pointerdown', (e) => {
         openEditor(hit, false);
         break;
       }
+      if (hit?.type === 'table') {
+        openEditor(hit, false, cellAt(hit, w));
+        break;
+      }
       checkpoint();
       const st = styles.text;
       const el = {
         id: newId(), type: 'text', x: w.x, y: w.y - st.fontSize * 0.6,
-        text: '', color: st.color, fontSize: st.fontSize, w: 0, h: 0,
+        text: '', color: st.color, fontSize: st.fontSize, w: 0, h: 0, ...fmtOf(st),
       };
       board.elements.push(el);
       openEditor(el, true);
@@ -1094,10 +1309,19 @@ canvas.addEventListener('pointerdown', (e) => {
       const size = 220;
       const el = {
         id: newId(), type: 'note', x: w.x - size / 2, y: w.y - size / 2, w: size, h: size,
-        text: '', color: styles.note.color, fontSize: styles.note.fontSize,
+        text: '', color: styles.note.color, fontSize: styles.note.fontSize, ...fmtOf(styles.note),
       };
       board.elements.push(el);
       openEditor(el, true);
+      break;
+    }
+
+    case 'sticker': {
+      // Seçili emoji tıklanan yere ekranda ~64 piksel boyunda yapıştırılır.
+      checkpoint();
+      const size = 64 / board.view.zoom;
+      board.elements.push({ id: newId(), type: 'sticker', x: w.x - size / 2, y: w.y - size / 2, w: size, h: size, emoji: styles.sticker.emoji });
+      changed();
       break;
     }
 
@@ -1108,6 +1332,18 @@ canvas.addEventListener('pointerdown', (e) => {
     case 'cut':
       drag = { kind: 'cutLasso', start: [w.x, w.y], points: [[w.x, w.y]] };
       break;
+
+    default:
+      // Hazır şekiller (üçgen, yıldız…) sürüklenen kutuya göre çokgen olarak çizilir.
+      if (POLY_SHAPES.includes(t)) {
+        checkpoint();
+        const st = styles.shape;
+        const el = { id: newId(), type: 'polygon', points: shapePoints(t, w.x, w.y, 0, 0), color: st.color, width: st.width, fill: st.fill };
+        board.elements.push(el);
+        drag = { kind: 'shape', el, start: w, poly: t };
+        autoHideProps();
+        sceneCacheValid = false;
+      }
   }
   requestRender();
 });
@@ -1139,20 +1375,26 @@ function startSelectDrag(e, w) {
     const opposite = { nw: 'se', ne: 'sw', sw: 'ne', se: 'nw' };
     // Dönmüş kutu öğeleri yalnızca orantılı büyür; serbest boyutlandırma onları çarpıtırdı.
     const keepRatio = sel.some((el) => el.rot);
-    const freeform = sel.length === 1 && ['rect', 'ellipse', 'polygon', 'note'].includes(sel[0].type) && !keepRatio;
+    const freeform = sel.length === 1 && ['rect', 'ellipse', 'polygon', 'note', 'table', 'link'].includes(sel[0].type) && !keepRatio;
     drag = { kind: 'resize', anchor: corners[opposite[handle]], corner: corners[handle], originals, freeform, keepRatio, moved: false };
     return;
   }
 
   const hit = topHit(w);
   if (hit) {
+    // Ctrl+tık gruptaki tek nesneyi seçer; aksi hâlde grup bütün olarak seçilir.
+    const single = e.ctrlKey || e.metaKey;
+    const mates = single ? [hit] : groupMates(hit);
     if (e.shiftKey) {
-      if (selection.has(hit.id)) selection.delete(hit.id);
-      else selection.add(hit.id);
-    } else if (!selection.has(hit.id)) {
-      selection = new Set([hit.id]);
+      const add = !selection.has(hit.id);
+      for (const m of mates) {
+        if (add) selection.add(m.id);
+        else selection.delete(m.id);
+      }
+    } else if (single || !selection.has(hit.id)) {
+      selection = new Set(mates.map((m) => m.id));
     }
-    if (selection.has(hit.id)) drag = { kind: 'move', last: w, moved: false };
+    if (selection.has(hit.id)) drag = { kind: 'move', start: w, moved: false };
   } else {
     if (!e.shiftKey) selection.clear();
     drag = { kind: 'lasso', points: [[w.x, w.y]], base: new Set(selection) };
@@ -1260,11 +1502,24 @@ canvas.addEventListener('pointermove', (e) => {
       if (!drag.moved) {
         checkpoint();
         drag.moved = true;
+        startMoveSnap();
       }
-      const dx = w.x - drag.last.x;
-      const dy = w.y - drag.last.y;
-      for (const el of selectedEls()) if (!el.locked) translate(el, dx, dy);
-      drag.last = w;
+      // Diğer nesnelerin kenar ve ortalarına yapışır (Ctrl basılıyken yapışmaz). Öğeler her adımda
+      // ilk hâllerinden yeniden kaydırılır; nokta dizileri yine yerinde değiştirilmez.
+      let dx = w.x - drag.start.x;
+      let dy = w.y - drag.start.y;
+      drag.guides = null;
+      if (!e.ctrlKey && !e.metaKey) {
+        const snap = snapMove(dx, dy);
+        dx += snap.dx;
+        dy += snap.dy;
+        drag.guides = snap.guides;
+      }
+      for (const [el, o] of drag.orig) {
+        const c = { ...o };
+        translate(c, dx, dy);
+        Object.assign(el, c);
+      }
       break;
     }
 
@@ -1332,6 +1587,7 @@ canvas.addEventListener('pointermove', (e) => {
       selection = new Set(drag.base);
       if (drag.points.length > 2) {
         for (const el of board.elements) if (!el.locked && insideLasso(el, drag.points)) selection.add(el.id);
+        selection = expandGroups(selection);
       }
       break;
     }
@@ -1520,6 +1776,8 @@ canvas.addEventListener('dblclick', (e) => {
   const hit = topHit(w);
   if (hit?.type === 'cover') toggleCover(hit);
   else if (hit && (hit.type === 'text' || hit.type === 'note')) openEditor(hit, false);
+  else if (hit?.type === 'table') openEditor(hit, false, cellAt(hit, w));
+  else if (hit?.type === 'link') openLinkEl(hit);
   else if (hit?.obsidian) openInObsidian(hit);
   else if (hit?.type === 'image') {
     selection = new Set([hit.id]);
@@ -1627,19 +1885,23 @@ function updateShape(w, shift) {
     const p = shift ? snapStraight(s, w, 15, true) : w;
     el.x2 = p.x;
     el.y2 = p.y;
-  } else {
-    let dx = w.x - s.x;
-    let dy = w.y - s.y;
-    if (shift) {
-      const m = Math.max(Math.abs(dx), Math.abs(dy));
-      dx = m * (Math.sign(dx) || 1);
-      dy = m * (Math.sign(dy) || 1);
-    }
-    el.x = s.x;
-    el.y = s.y;
-    el.w = dx;
-    el.h = dy;
+    return;
   }
+  let dx = w.x - s.x;
+  let dy = w.y - s.y;
+  if (shift) {
+    const m = Math.max(Math.abs(dx), Math.abs(dy));
+    dx = m * (Math.sign(dx) || 1);
+    dy = m * (Math.sign(dy) || 1);
+  }
+  if (drag.poly) {
+    el.points = shapePoints(drag.poly, s.x, s.y, dx, dy);
+    return;
+  }
+  el.x = s.x;
+  el.y = s.y;
+  el.w = dx;
+  el.h = dy;
 }
 
 // ---------- Yorumlar ----------
@@ -1919,6 +2181,8 @@ function searchText(el) {
 
 function ownText(el) {
   if (el.type === 'text' || el.type === 'note') return el.text;
+  if (el.type === 'table') return el.cells.map((row) => row.join('\t')).join('\n');
+  if (el.type === 'link') return [el.title, el.desc, el.url].filter(Boolean).join('\n');
   if (el.obsidian) return el.obsidian.title || '';
   if (el.type === 'axes') return (el.fns || []).map((f) => f.expr).join(' ');
   return '';
@@ -2363,7 +2627,7 @@ function eraseAlong(a, b) {
   const { mode, all } = styles.eraser;
   // Kilitli nesneler silgiden etkilenmez; not, resim, bant ve koordinat sistemi yalnızca "hepsini sil" açıkken silinir.
   const hits = board.elements.filter((el) => !el.locked &&
-    (all || !['note', 'image', 'cover', 'axes'].includes(el.type)) && samples.some((p) => hitTest(el, p.x, p.y, r)));
+    (all || !['note', 'image', 'cover', 'axes', 'table', 'sticker', 'link'].includes(el.type)) && samples.some((p) => hitTest(el, p.x, p.y, r)));
   if (!hits.length) return;
   if (!drag.checkpointed) {
     checkpoint();
@@ -2459,7 +2723,7 @@ function updateCursor(e) {
   if (drag?.kind === 'pan' || drag?.kind === 'rotate') c = 'grabbing';
   else if (t === 'hand') c = 'grab';
   else if (t === 'pen' || t === 'highlighter' || t === 'tempHighlighter') c = brushCursor(styles[t], t !== 'pen');
-  else if (SHAPE_TOOLS.includes(t) || t === 'note' || t === 'cover' || t === 'cut') c = 'crosshair';
+  else if (SHAPE_TOOLS.includes(t) || t === 'note' || t === 'cover' || t === 'cut' || t === 'sticker') c = 'crosshair';
   else if (t === 'eraser' || t === 'laser') c = 'none';
   else if (t === 'text') c = 'text';
   const ph = protractor && e && !drag && t !== 'hand' ? protractorHit(protractor, e.clientX, e.clientY) : null;
@@ -2490,12 +2754,17 @@ function updateCursor(e) {
 
 // ---------- Metin düzenleyici ----------
 
-function openEditor(el, isNew) {
+// Biçimle ilgili alanların imzası: düzenleme sırasında yalnızca biçim değiştiyse de kaydedilsin diye.
+const styleSig = (el) => JSON.stringify([el.color, el.fontSize, ...FMT_PROPS.map((k) => el[k] ?? null)]);
+
+// cell { r, c } verilirse tablonun o hücresi düzenlenir.
+function openEditor(el, isNew, cell = null) {
   if (!isNew) checkpoint();
-  editing = { el, isNew, text: el.text, h: el.h };
+  const text = cell ? el.cells[cell.r][cell.c] : el.text;
+  editing = { el, isNew, text, h: el.h, cell, sig: styleSig(el) };
   selection.clear();
-  editor.value = el.text;
-  editor.className = el.type === 'note' ? 'note' : '';
+  editor.value = text;
+  editor.className = el.type === 'note' || cell ? 'note' : '';
   editor.style.display = 'block';
   positionEditor();
   // Tıklamanın varsayılan odak değişikliği bittikten sonra odakla.
@@ -2510,22 +2779,43 @@ function openEditor(el, isNew) {
 
 function positionEditor() {
   const el = editing.el;
+  const cell = editing.cell;
   const z = board.view.zoom;
   const p = toScreen(el.x, el.y);
-  editor.style.fontSize = el.fontSize * z + 'px';
+  const st = editor.style;
+  // Biçim düzenleyiciye de uygulanır; liste işaretleri yazarken görünmez, yeri soldan boşluk olarak kalır.
+  const fmt = cell ? cellFmt(el, cell.r) : el;
+  st.fontSize = el.fontSize * z + 'px';
+  st.fontWeight = fmt.bold ? '700' : '';
+  st.fontStyle = fmt.italic ? 'italic' : '';
+  st.textDecoration = fmt.underline ? 'underline' : '';
+  st.textAlign = fmt.align || '';
+  const indent = listIndent(editor.value, el.fontSize, fmt) * z;
+  st.paddingLeft = indent + 'px';
+  if (cell) {
+    const r = cellRect(el, cell.r, cell.c);
+    const q = toScreen(r.x, r.y);
+    st.color = el.color;
+    st.left = q.x + CELL_PAD * z + 'px';
+    st.top = q.y + CELL_PAD * z + 'px';
+    st.width = Math.max(4, (r.w - CELL_PAD * 2) * z - indent) + 'px';
+    st.height = Math.max(4, (r.h - CELL_PAD * 2) * z) + 'px';
+    st.transform = '';
+    return;
+  }
   if (el.type === 'note') {
-    editor.style.color = '#1f2328';
-    editor.style.left = p.x + NOTE_PADDING * z + 'px';
-    editor.style.top = p.y + NOTE_PADDING * z + 'px';
-    editor.style.width = (el.w - NOTE_PADDING * 2) * z + 'px';
-    editor.style.height = (el.h - NOTE_PADDING * 2) * z + 'px';
+    st.color = '#1f2328';
+    st.left = p.x + NOTE_PADDING * z + 'px';
+    st.top = p.y + NOTE_PADDING * z + 'px';
+    st.width = Math.max(4, (el.w - NOTE_PADDING * 2) * z - indent) + 'px';
+    st.height = (el.h - NOTE_PADDING * 2) * z + 'px';
   } else {
-    const m = measureText(editor.value + ' ', el.fontSize);
-    editor.style.color = el.color;
-    editor.style.left = p.x + 'px';
-    editor.style.top = p.y + 'px';
-    editor.style.width = (m.w + el.fontSize) * z + 'px';
-    editor.style.height = m.h * z + 'px';
+    const m = measureText(editor.value + ' ', el.fontSize, el);
+    st.color = el.color;
+    st.left = p.x + 'px';
+    st.top = p.y + 'px';
+    st.width = (m.w + el.fontSize) * z - indent + 'px';
+    st.height = m.h * z + 'px';
   }
   // Dönmüş öğenin düzenleyicisi de öğenin merkezi etrafında dönük durur.
   const pad = el.type === 'note' ? NOTE_PADDING : 0;
@@ -2535,13 +2825,14 @@ function positionEditor() {
 
 // Not, yazılan metne göre aşağı doğru büyür.
 function fitNoteHeight(el, text) {
-  const need = wrappedHeight(text, el.fontSize, el.w - NOTE_PADDING * 2) + NOTE_PADDING * 2;
+  const need = wrappedHeight(text, el.fontSize, el.w - NOTE_PADDING * 2, el) + NOTE_PADDING * 2;
   if (need > el.h) resizeBox(el, el.w, need);
 }
 
 editor.addEventListener('input', () => {
   if (!editing) return;
-  if (editing.el.type === 'note') fitNoteHeight(editing.el, editor.value);
+  if (editing.cell) fitTable(editing.el, { ...editing.cell, text: editor.value });
+  else if (editing.el.type === 'note') fitNoteHeight(editing.el, editor.value);
   requestRender();
 });
 
@@ -2549,6 +2840,17 @@ editor.addEventListener('blur', () => commitEditor());
 
 editor.addEventListener('keydown', (e) => {
   e.stopPropagation();
+  const fmtKey = { b: 'bold', i: 'italic', u: 'underline' }[e.key.toLowerCase()];
+  if ((e.ctrlKey || e.metaKey) && fmtKey) {
+    e.preventDefault();
+    toggleFmt(fmtKey);
+    return;
+  }
+  if (e.key === 'Tab' && editing?.cell) {
+    e.preventDefault();
+    moveCell(e.shiftKey ? -1 : 1);
+    return;
+  }
   if (e.key === 'Escape' || (e.key === 'Enter' && e.ctrlKey)) {
     e.preventDefault();
     commitEditor();
@@ -2557,10 +2859,25 @@ editor.addEventListener('keydown', (e) => {
 
 function commitEditor() {
   if (!editing) return;
-  const { el, isNew, text: oldText, h: oldH } = editing;
+  const { el, isNew, text: oldText, h: oldH, cell, sig } = editing;
   editing = null;
   editor.style.display = 'none';
   const text = editor.value.replace(/\s+$/, '');
+
+  if (cell) {
+    if (text !== oldText && el.cells[cell.r]?.[cell.c] !== undefined) {
+      // Hücre dizileri yerinde değiştirilmez (geri alma kopyası paylaşıyor).
+      el.cells = el.cells.map((row, r) => (r === cell.r ? row.map((v, c) => (c === cell.c ? text : v)) : row));
+    }
+    fitTable(el);
+    if (!isNew && text === oldText && el.h === oldH && styleSig(el) === sig) {
+      undoStack.pop();
+      changed(false);
+      return;
+    }
+    changed();
+    return;
+  }
 
   if (el.type === 'text' && !text.trim()) {
     board.elements.splice(board.elements.indexOf(el), 1);
@@ -2569,11 +2886,11 @@ function commitEditor() {
     el.text = text;
     // Formül resmi hâlâ aynı yazıya aitse boyutu korunur; değilse yeni resim gelene kadar düz metin ölçüsü.
     if (el.type === 'text' && el.math?.text !== text) {
-      const m = measureText(text, el.fontSize);
+      const m = measureText(text, el.fontSize, el);
       resizeBox(el, m.w, m.h);
     }
     else if (el.type === 'note') fitNoteHeight(el, text);
-    if (!isNew && text === oldText && el.h === oldH) {
+    if (!isNew && text === oldText && el.h === oldH && styleSig(el) === sig) {
       undoStack.pop();
       changed(false);
       return;
@@ -2593,19 +2910,20 @@ function propsContext() {
   if (crop) return { crop: true };
   if (editing) {
     const el = editing.el;
+    if (editing.cell) return { colors: INK_COLORS, font: true, textFmt: true, table: el, values: el };
     return el.type === 'note'
-      ? { noteColors: true, font: true, values: { noteColor: el.color, fontSize: el.fontSize } }
-      : { colors: INK_COLORS, font: true, values: el };
+      ? { noteColors: true, font: true, textFmt: true, values: { ...el, noteColor: el.color } }
+      : { colors: INK_COLORS, font: true, textFmt: true, values: el };
   }
   if (selectionIsEditable()) {
     const sel = selectedEls();
     const has = (...types) => sel.some((el) => types.includes(el.type));
     const first = (...types) => sel.find((el) => types.includes(el.type)) || {};
     const ctx = { arrange: true, rotatable: sel.every((el) => canRotate(el) && !el.locked), values: { locked: sel.every((el) => el.locked) } };
-    if (has('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes')) {
+    if (has('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes', 'table')) {
       ctx.colors = sel.every((el) => el.highlighter) ? HIGHLIGHT_COLORS
         : sel.every((el) => el.type === 'cover') ? COVER_COLORS : INK_COLORS;
-      ctx.values.color = first('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes').color;
+      ctx.values.color = first('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes', 'table').color;
     }
     // Yalnızca galaksi çizgileri seçiliyse renk satırı galaksi renklerini gösterir.
     if (sel.every((el) => el.type === 'stroke' && !el.highlighter && el.brush === 'galaxy')) {
@@ -2636,14 +2954,28 @@ function propsContext() {
       ctx.fill = true;
       ctx.values.fill = first('rect', 'ellipse', 'polygon').fill;
     }
-    if (has('text', 'note')) {
+    if (has(...TEXT_TYPES)) {
       ctx.font = true;
-      ctx.values.fontSize = first('text', 'note').fontSize;
+      ctx.textFmt = true;
+      const f = first(...TEXT_TYPES);
+      ctx.values.fontSize = f.fontSize;
+      for (const k of FMT_PROPS) ctx.values[k] = f[k];
     }
     if (has('note')) {
       ctx.noteColors = true;
       ctx.values.noteColor = first('note').color;
     }
+    ctx.table = sel.length === 1 && sel[0].type === 'table' ? sel[0] : null;
+    if (sel.every((el) => el.type === 'sticker')) {
+      ctx.stickers = true;
+      ctx.values.emoji = sel[0].emoji;
+    }
+    ctx.link = sel.length === 1 && sel[0].type === 'link';
+    // Hizalama ve gruplama birimleri: her grup bir birim sayılır.
+    const units = unitsOf(sel.filter((el) => !el.locked)).length;
+    ctx.align = units >= 2 ? units : 0;
+    ctx.canGroup = units >= 2;
+    ctx.canUngroup = sel.some((el) => el.groupId);
     ctx.obsidian = sel.some((el) => el.obsidian);
     ctx.obsidianOne = sel.length === 1 && !!sel[0].obsidian;
     return ctx;
@@ -2665,11 +2997,13 @@ function propsContext() {
   if (t === 'highlighter') return { colors: HIGHLIGHT_COLORS, widths: HIGHLIGHT_WIDTHS, values: styles.highlighter };
   if (t === 'tempHighlighter') return { colors: HIGHLIGHT_COLORS, widths: HIGHLIGHT_WIDTHS, values: styles.tempHighlighter };
   if (SHAPE_TOOLS.includes(t)) {
-    return { colors: INK_COLORS, widths: SHAPE_WIDTHS, fill: t === 'rect' || t === 'ellipse', compass: t === 'compass', values: styles.shape };
+    const fill = t === 'rect' || t === 'ellipse' || POLY_SHAPES.includes(t);
+    return { colors: INK_COLORS, widths: SHAPE_WIDTHS, fill, compass: t === 'compass', values: styles.shape };
   }
   if (t === 'cover') return { colors: COVER_COLORS, cover: true, coverTool: true, values: styles.cover };
-  if (t === 'text') return { colors: INK_COLORS, font: true, values: styles.text };
-  if (t === 'note') return { noteColors: true, font: true, values: { noteColor: styles.note.color, fontSize: styles.note.fontSize } };
+  if (t === 'text') return { colors: INK_COLORS, font: true, textFmt: true, values: styles.text };
+  if (t === 'note') return { noteColors: true, font: true, textFmt: true, values: { ...styles.note, noteColor: styles.note.color } };
+  if (t === 'sticker') return { stickers: true, values: styles.sticker };
   if (t === 'eraser') return { eraser: true };
   if (t === 'laser') return { colors: LASER_COLORS, values: styles.laser };
   return null;
@@ -2761,6 +3095,28 @@ function updateProps() {
     ).join('');
   }
 
+  const fmtRow = $('#textFmtRow');
+  fmtRow.classList.toggle('hidden', !c.textFmt);
+  if (c.textFmt) {
+    fmtRow.querySelectorAll('[data-fmt]').forEach((b) => b.classList.toggle('selected', !!v[b.dataset.fmt]));
+    fmtRow.querySelectorAll('[data-align]').forEach((b) => b.classList.toggle('selected', (v.align || 'left') === b.dataset.align));
+    fmtRow.querySelectorAll('[data-list]').forEach((b) => b.classList.toggle('selected', v.list === b.dataset.list));
+  }
+
+  $('#tableRow').classList.toggle('hidden', !c.table);
+  if (c.table) $('[data-table="header"]').classList.toggle('selected', !!c.table.header);
+
+  const stickerRow = $('#stickerRow');
+  stickerRow.classList.toggle('hidden', !c.stickers);
+  if (c.stickers) {
+    stickerRow.innerHTML = STICKERS.map((e) =>
+      `<button class="emoji-btn${e === v.emoji ? ' selected' : ''}" data-emoji="${e}">${e}</button>`,
+    ).join('');
+  }
+  $('#linkRow').classList.toggle('hidden', !c.link);
+  $('#alignRow').classList.toggle('hidden', !c.align);
+  document.querySelectorAll('[data-align-op^="dist"]').forEach((b) => b.classList.toggle('hidden', c.align < 3));
+
   const fillRow = $('#fillRow');
   fillRow.classList.toggle('hidden', !c.fill);
   fillRow.querySelectorAll('[data-fill]').forEach((b) => b.classList.toggle('selected', b.dataset.fill === v.fill));
@@ -2798,6 +3154,8 @@ function updateProps() {
     commentChip.classList.toggle('selected', commentFor === one.id);
   }
   for (const b of document.querySelectorAll('[data-arrange^="rot"]')) b.classList.toggle('hidden', !c.rotatable);
+  $('[data-arrange="group"]').classList.toggle('hidden', !c.canGroup);
+  $('[data-arrange="ungroup"]').classList.toggle('hidden', !c.canUngroup);
   $('#cropRow').classList.toggle('hidden', !c.crop);
   $('#imageRow').classList.toggle('hidden', !c.cropable);
   $('#obsidianRow').classList.toggle('hidden', !c.obsidian);
@@ -2813,10 +3171,12 @@ function updateProps() {
 function applyStyle(prop, value) {
   if (editing) {
     const el = editing.el;
-    if (prop === 'color' && el.type === 'text') el.color = value;
+    if (prop === 'color' && (el.type === 'text' || el.type === 'table')) el.color = value;
     if (prop === 'noteColor' && el.type === 'note') el.color = value;
     if (prop === 'fontSize') el.fontSize = value;
-    if (el.type === 'note') fitNoteHeight(el, editor.value);
+    if (FMT_PROPS.includes(prop)) setFmt(el, prop, value);
+    if (editing.cell) fitTable(el, { ...editing.cell, text: editor.value }, prop === 'fontSize');
+    else if (el.type === 'note') fitNoteHeight(el, editor.value);
     requestRender();
     updateProps();
     setTimeout(() => editor.focus());
@@ -2825,7 +3185,7 @@ function applyStyle(prop, value) {
   if (selectionIsEditable()) {
     checkpoint();
     for (const el of selectedEls()) {
-      if (prop === 'color' && !['note', 'image'].includes(el.type)) el.color = value;
+      if (prop === 'color' && !['note', 'image', 'sticker', 'link'].includes(el.type)) el.color = value;
       if (prop === 'noteColor' && el.type === 'note') el.color = value;
       if (prop === 'width' && ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type)) el.width = value;
       if (prop === 'fill' && ['rect', 'ellipse', 'polygon'].includes(el.type)) el.fill = value;
@@ -2843,13 +3203,28 @@ function applyStyle(prop, value) {
       }
       if (prop === 'fontSize' && el.type === 'text') {
         el.fontSize = value;
-        const m = measureText(el.text, value);
+        const m = measureText(el.text, value, el);
         resizeBox(el, m.w, m.h);
       }
       if (prop === 'fontSize' && el.type === 'note') {
         el.fontSize = value;
         fitNoteHeight(el, el.text);
       }
+      if (prop === 'fontSize' && el.type === 'table') {
+        el.fontSize = value;
+        fitTable(el, null, true);
+      }
+      if (FMT_PROPS.includes(prop) && TEXT_TYPES.includes(el.type)) {
+        setFmt(el, prop, value);
+        // Formül resmi gösterilen metnin kutusu resme aittir; ölçüsü değişmez.
+        if (el.type === 'text' && !el.math) {
+          const m = measureText(el.text, el.fontSize, el);
+          resizeBox(el, m.w, m.h);
+        }
+        if (el.type === 'note') fitNoteHeight(el, el.text);
+        if (el.type === 'table') fitTable(el);
+      }
+      if (prop === 'emoji' && el.type === 'sticker') el.emoji = value;
     }
     changed();
     return;
@@ -2865,6 +3240,13 @@ function applyStyle(prop, value) {
   savePrefs();
   updateProps();
   refreshCursor();
+}
+
+// Kalın / italik / altı çizili düğmesi ya da Ctrl+B/I/U: o anki değerin tersini uygular.
+function toggleFmt(prop) {
+  const c = propsContext();
+  if (!c?.textFmt) return;
+  applyStyle(prop, !c.values?.[prop]);
 }
 
 // Alt+1 … Alt+0 kısayolu: seçili kalem çizgileri varsa onlara, yoksa kaleme geçip fırçayı uygular.
@@ -2886,6 +3268,14 @@ $('#props').addEventListener('click', (e) => {
   else if (b.dataset.brush) applyStyle('brush', b.dataset.brush);
   else if (b.dataset.hatch) applyStyle('hatch', b.dataset.hatch);
   else if (b.dataset.arrange) arrange(b.dataset.arrange);
+  else if (b.dataset.fmt) toggleFmt(b.dataset.fmt);
+  else if (b.dataset.align) applyStyle('align', b.dataset.align);
+  else if (b.dataset.list) applyStyle('list', propsContext()?.values?.list === b.dataset.list ? null : b.dataset.list);
+  else if (b.dataset.alignOp) alignSelection(b.dataset.alignOp);
+  else if (b.dataset.table) tableAction(b.dataset.table);
+  else if (b.dataset.emoji) applyStyle('emoji', b.dataset.emoji);
+  else if (b.dataset.link === 'open') openLinkEl(selectedEls()[0]);
+  else if (b.dataset.link === 'refresh') fetchLinkInfo(selectedEls()[0], true);
   else if (b.dataset.crop === 'start') startCrop();
   else if (b.dataset.crop === 'apply') applyCrop();
   else if (b.dataset.crop === 'cancel') cancelCrop();
@@ -3066,6 +3456,8 @@ function arrange(action) {
   if (action === 'duplicate') return duplicateSelection();
   if (action === 'lock') return toggleLock();
   if (action === 'comment') return commentOnSelection();
+  if (action === 'group') return groupSelection();
+  if (action === 'ungroup') return ungroupSelection();
   if (action === 'rotl') return rotateSelection(-Math.PI / 2);
   if (action === 'rotr') return rotateSelection(Math.PI / 2);
   checkpoint();
@@ -3121,9 +3513,15 @@ function deleteSelection() {
 
 function insertCopies(els, offset) {
   checkpoint();
+  // Kopyalanan gruplar yeni grup kimliği alır; kopya asıl grupla birleşmez.
+  const gids = new Map();
   const copies = els.map((el) => {
     const c = cloneEl(el);
     c.id = newId();
+    if (c.groupId) {
+      if (!gids.has(c.groupId)) gids.set(c.groupId, newId());
+      c.groupId = gids.get(c.groupId);
+    }
     translate(c, offset.x, offset.y);
     return c;
   });
@@ -3309,6 +3707,10 @@ function runAction(a) {
       $('[data-action="protractor"]').classList.toggle('active', !!protractor);
       return requestRender();
     case 'axes': return insertAxes();
+    case 'table': return insertTable();
+    case 'template': return openTemplates();
+    case 'link': return insertLink();
+    case 'webImage': return searchWebImages();
   }
 }
 
@@ -3328,6 +3730,427 @@ function insertAxes() {
   changed();
   toast(t('Koordinat sistemi eklendi — panelden fonksiyon grafiği çizebilirsin'));
   setTimeout(() => $('#fnInput').focus());
+}
+
+// ---------- Tablo ----------
+// colW / rowH dünya birimiyle sütun genişlikleri ve satır yükseklikleri, cells[satır][sütun] metinler.
+// Diziler yerinde değiştirilmez, her değişiklikte yenisi atanır (geri alma yüzeysel kopyaya dayanır).
+// Hücreye çift tıklayınca (ya da Metin aracıyla tıklayınca) düzenlenir; Tab sonraki hücreye geçer.
+
+const TABLE_FONT = 18;
+const minRowH = (el) => el.fontSize * 1.25 + CELL_PAD * 2;
+const cellFmt = (el, r) => ({ ...el, bold: el.bold || (el.header && r === 0) });
+
+function cellRect(el, r, c) {
+  let x = el.x, y = el.y;
+  for (let i = 0; i < c; i++) x += el.colW[i];
+  for (let i = 0; i < r; i++) y += el.rowH[i];
+  return { x, y, w: el.colW[c], h: el.rowH[r] };
+}
+
+function cellAt(el, w) {
+  const find = (sizes, start, v) => {
+    let acc = start;
+    for (let i = 0; i < sizes.length; i++) {
+      acc += sizes[i];
+      if (v < acc) return i;
+    }
+    return sizes.length - 1;
+  };
+  return { r: find(el.rowH, el.y, w.y), c: find(el.colW, el.x, w.x) };
+}
+
+// Satırlar hücrelerindeki yazıya yetecek kadar uzar. shrink ise (yazı boyutu değişince) yazıya göre
+// kısalır da. edit { r, c, text }: düzenlenmekte olan hücrenin canlı metni.
+function fitTable(el, edit = null, shrink = false) {
+  let grew = false;
+  const rowH = el.rowH.map((h, r) => {
+    let need = minRowH(el);
+    const fmt = cellFmt(el, r);
+    el.colW.forEach((cw, c) => {
+      const text = edit && edit.r === r && edit.c === c ? edit.text : el.cells[r][c];
+      if (text) need = Math.max(need, wrappedHeight(text, el.fontSize, cw - CELL_PAD * 2, fmt) + CELL_PAD * 2);
+    });
+    if (need > h + 0.5 || (shrink && Math.abs(need - h) > 0.5)) {
+      grew = true;
+      return need;
+    }
+    return h;
+  });
+  if (grew) {
+    el.rowH = rowH;
+    el.h = rowH.reduce((a, b) => a + b, 0);
+  }
+}
+
+function insertTable() {
+  commitEditor();
+  const cols = 3, rows = 3, cw = 160;
+  const rh = TABLE_FONT * 1.25 + CELL_PAD * 2;
+  const c = toWorld(innerWidth / 2, innerHeight / 2);
+  const el = {
+    id: newId(), type: 'table', x: c.x - (cols * cw) / 2, y: c.y - (rows * rh) / 2, w: cols * cw, h: rows * rh,
+    colW: Array(cols).fill(cw), rowH: Array(rows).fill(rh), cells: Array.from({ length: rows }, () => Array(cols).fill('')),
+    color: '#1f2328', fontSize: TABLE_FONT, header: true,
+  };
+  checkpoint();
+  board.elements.push(el);
+  setTool('select');
+  openEditor(el, true, { r: 0, c: 0 });
+  toast(t('Tablo eklendi — Tab ile sonraki hücreye geç, hücreye çift tıklayınca düzenlenir'), 3500);
+}
+
+// Satır / sütun ekler ya da siler; ekleme `at` satırının (sütununun) ardına yapılır.
+function tableOp(el, op, at) {
+  const rows = el.rowH.length, cols = el.colW.length;
+  if ((op === 'delRow' && rows < 2) || (op === 'delCol' && cols < 2)) {
+    toast(t('Tabloda en az bir satır ve bir sütun kalmalı'));
+    return false;
+  }
+  checkpoint();
+  const insert = (list, i, v) => [...list.slice(0, i + 1), v, ...list.slice(i + 1)];
+  if (op === 'addRow') {
+    el.rowH = insert(el.rowH, at, minRowH(el));
+    el.cells = insert(el.cells, at, Array(cols).fill(''));
+  } else if (op === 'delRow') {
+    el.rowH = el.rowH.filter((_, i) => i !== at);
+    el.cells = el.cells.filter((_, i) => i !== at);
+  } else if (op === 'addCol') {
+    el.colW = insert(el.colW, at, el.colW[at]);
+    el.cells = el.cells.map((row) => insert(row, at, ''));
+  } else if (op === 'delCol') {
+    el.colW = el.colW.filter((_, i) => i !== at);
+    el.cells = el.cells.map((row) => row.filter((_, i) => i !== at));
+  }
+  el.w = el.colW.reduce((a, b) => a + b, 0);
+  el.h = el.rowH.reduce((a, b) => a + b, 0);
+  fitTable(el);
+  changed();
+  return true;
+}
+
+// Paneldeki tablo düğmeleri. Hücre düzenlenirken işlem o hücrenin satırına / sütununa uygulanır ve
+// düzenleme uygun hücrede sürer; yalnızca tablo seçiliyken son satır / sütun kullanılır.
+function tableAction(op) {
+  const cell = editing?.cell;
+  const el = cell ? editing.el : selectedEls()[0];
+  if (el?.type !== 'table') return;
+  commitEditor();
+  if (op === 'header') {
+    checkpoint();
+    el.header = !el.header;
+    fitTable(el, null, true);
+    changed();
+  } else {
+    const row = op.endsWith('Row');
+    const at = cell ? (row ? cell.r : cell.c) : row ? el.rowH.length - 1 : el.colW.length - 1;
+    if (!tableOp(el, op, at) || !cell) return;
+    const r = op === 'addRow' ? cell.r + 1 : Math.min(cell.r, el.rowH.length - 1);
+    const c = op === 'addCol' ? cell.c + 1 : Math.min(cell.c, el.colW.length - 1);
+    return openEditor(el, false, { r, c });
+  }
+  if (cell) openEditor(el, false, cell);
+  else selection = new Set([el.id]);
+}
+
+// Tab: sonraki (Shift ile önceki) hücre; son hücrede Tab yeni satır ekler.
+function moveCell(d) {
+  const { el, cell } = editing;
+  const cols = el.colW.length;
+  const i = cell.r * cols + cell.c + d;
+  commitEditor();
+  if (i < 0) return openEditor(el, false, { r: 0, c: 0 });
+  if (i >= el.rowH.length * cols) tableOp(el, 'addRow', el.rowH.length - 1);
+  openEditor(el, false, { r: Math.floor(i / cols), c: i % cols });
+}
+
+// ---------- Bağlantı kartları ve web'den resim ----------
+// Bağlantı kartı web sayfasının başlığını, açıklamasını ve alan adını gösterir; çift tıklayınca
+// varsayılan tarayıcıda açılır. Başlık ana süreçte sayfadan okunur (geri alma adımı oluşturmaz).
+
+function normalizeUrl(text) {
+  let s = text.trim();
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) s = 'https://' + s;
+  return URL_RE.test(s) ? s : null;
+}
+
+async function insertLink() {
+  commitEditor();
+  const input = await askText({ title: t('Bağlantı ekle'), placeholder: 'https://…', hint: t('Bir web adresini yapıştır; sayfanın başlığı karta yazılır.'), ok: t('Ekle') });
+  if (input === null) return;
+  const url = normalizeUrl(input);
+  if (!url) return toast(t('Geçerli bir web adresi yaz'));
+  addLinkCard(url, toWorld(innerWidth / 2, innerHeight / 2));
+}
+
+function addLinkCard(url, at) {
+  const z = board.view.zoom;
+  const w = LINK_SIZE.w / z, h = LINK_SIZE.h / z;
+  const el = { id: newId(), type: 'link', x: at.x - w / 2, y: at.y - h / 2, w, h, url, title: '' };
+  checkpoint();
+  board.elements.push(el);
+  setTool('select');
+  selection = new Set([el.id]);
+  changed();
+  fetchLinkInfo(el);
+}
+
+async function fetchLinkInfo(el, manual = false) {
+  if (el?.type !== 'link') return;
+  const { id, url } = el;
+  if (manual) toast(t('Sayfa bilgisi alınıyor…'));
+  const r = await api.linkInfo(url);
+  // Beklerken kart silinmiş ya da değişmiş olabilir: güncel nesne kimlikle bulunur.
+  const cur = board.elements.find((e) => e.id === id);
+  if (!cur || cur.url !== url) return;
+  if (r?.error) {
+    if (manual) toast(t('Sayfa bilgisi alınamadı: {hata}', { hata: r.error }));
+    return;
+  }
+  if (manual) toast(t('Bağlantı kartı güncellendi'));
+  if (cur.title === r.title && (cur.desc || '') === r.desc) return;
+  cur.title = r.title;
+  if (r.desc) cur.desc = r.desc;
+  else delete cur.desc;
+  sceneCacheValid = false;
+  requestRender();
+  updateProps();
+  scheduleSave();
+}
+
+async function openLinkEl(el) {
+  if (el?.type !== 'link') return;
+  if (!(await api.openLink(el.url))) toast(t('Bağlantı açılamadı'));
+}
+
+// Bing Görseller'de arar; bulunan resim tarayıcıdan sürüklenir ya da kopyalanıp yapıştırılır.
+async function searchWebImages() {
+  commitEditor();
+  const q = await askText({ title: t("Web'de resim ara"), placeholder: t('Ne arıyorsun?'), hint: t('Arama varsayılan tarayıcıda açılır.'), ok: t('Ara') });
+  if (!q?.trim()) return;
+  api.openLink('https://www.bing.com/images/search?q=' + encodeURIComponent(q.trim()));
+  toast(t('Beğendiğin resmi tarayıcıdan tahtaya sürükle ya da sağ tık → Resmi kopyala, sonra Ctrl+V'), 7000);
+}
+
+function insertImageUrl(url, at) {
+  toast(t('Resim indiriliyor…'));
+  const name = url.length > 60 ? url.slice(0, 60) + '…' : url;
+  return placeImages([{
+    name,
+    load: async () => {
+      const r = await api.fetchImage(url);
+      if (r?.error) throw new Error(r.error);
+      return r.src;
+    },
+  }], at);
+}
+
+// ---------- Metin sorma penceresi ----------
+
+const askDlg = $('#askDlg');
+const askDialogOpen = () => !askDlg.classList.contains('hidden');
+$('#askForm').addEventListener('submit', (e) => e.preventDefault());
+
+// Tek satırlık metin sorar; onaylanırsa metni, vazgeçilirse null döndürür.
+function askText({ title, placeholder = '', hint = '', ok = t('Tamam'), value = '' }) {
+  const input = $('#askInput');
+  $('#askTitle').textContent = title;
+  $('#askHint').textContent = hint;
+  $('#askOk').firstChild.textContent = ok + ' ';
+  input.placeholder = placeholder;
+  input.value = value;
+  return new Promise((resolve) => {
+    const finish = (res) => {
+      askDlg.classList.add('hidden');
+      $('#askForm').removeEventListener('submit', onSubmit);
+      askDlg.removeEventListener('keydown', onKey);
+      askDlg.removeEventListener('pointerdown', onBackdrop);
+      $('#askCancel').removeEventListener('click', onCancel);
+      resolve(res);
+    };
+    const onSubmit = () => finish(input.value);
+    const onKey = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(null);
+      }
+    };
+    const onBackdrop = (e) => { if (e.target === askDlg) finish(null); };
+    const onCancel = () => finish(null);
+    $('#askForm').addEventListener('submit', onSubmit);
+    askDlg.addEventListener('keydown', onKey);
+    askDlg.addEventListener('pointerdown', onBackdrop);
+    $('#askCancel').addEventListener('click', onCancel);
+    askDlg.classList.remove('hidden');
+    input.focus();
+    input.select();
+  });
+}
+
+// ---------- Şablonlar ----------
+// Hazır düzenler: çerçeveler ve başlıklar kilitli eklenir (notlar üzerlerinde rahatça taşınır),
+// notlar ve tablolar serbesttir. Şablon ekranın ortasına konur ve gerekirse ekrana sığdırılır.
+
+function tplFrame(x, y, w, h, color) {
+  return { id: newId(), type: 'rect', x, y, w, h, color, width: 2, fill: 'soft', locked: true };
+}
+
+function tplText(x, y, text, size = 28, color = '#1f2328', extra = {}) {
+  const el = { id: newId(), type: 'text', x, y, text, color, fontSize: size, bold: true, locked: true, ...extra };
+  if (!el.locked) delete el.locked;
+  return Object.assign(el, measureText(text, size, el));
+}
+
+function tplNote(x, y, color = NOTE_COLORS[0], w = 220, h = 140) {
+  return { id: newId(), type: 'note', x, y, w, h, text: '', color, fontSize: 20 };
+}
+
+// Başlıklı sütunlar (Kanban, retrospektif); her sütunda notlar.
+function tplColumns(cols, notes) {
+  const W = 300, H = 720, gap = 32;
+  return cols.flatMap(([title, color], i) => {
+    const x = i * (W + gap);
+    const out = [tplFrame(x, 0, W, H, color), tplText(x + 20, 18, title, 26, color)];
+    for (let k = 0; k < notes; k++) out.push(tplNote(x + 40, 90 + k * 170, NOTE_COLORS[i % NOTE_COLORS.length]));
+    return out;
+  });
+}
+
+const TEMPLATES = [
+  {
+    id: 'kanban', name: t('Kanban'), desc: t('Yapılacak, yapılıyor, bitti sütunları'),
+    preview: '<rect x="6" y="8" width="32" height="56" rx="3" fill="#1971c2" opacity=".15"/><rect x="44" y="8" width="32" height="56" rx="3" fill="#f08c00" opacity=".15"/><rect x="82" y="8" width="32" height="56" rx="3" fill="#2f9e44" opacity=".15"/><rect x="11" y="18" width="22" height="12" rx="2" fill="#fff3a3"/><rect x="11" y="34" width="22" height="12" rx="2" fill="#fff3a3"/><rect x="49" y="18" width="22" height="12" rx="2" fill="#ffd6e0"/><rect x="87" y="18" width="22" height="12" rx="2" fill="#c9f2d0"/>',
+    build: () => tplColumns([[t('Yapılacak'), '#1971c2'], [t('Yapılıyor'), '#f08c00'], [t('Bitti'), '#2f9e44']], 2),
+  },
+  {
+    id: 'retro', name: t('Retrospektif'), desc: t('İyi gidenler, geliştirilecekler, aksiyonlar'),
+    preview: '<rect x="6" y="8" width="32" height="56" rx="3" fill="#2f9e44" opacity=".15"/><rect x="44" y="8" width="32" height="56" rx="3" fill="#e8590c" opacity=".15"/><rect x="82" y="8" width="32" height="56" rx="3" fill="#7048e8" opacity=".15"/><rect x="11" y="18" width="22" height="12" rx="2" fill="#fff3a3"/><rect x="49" y="18" width="22" height="12" rx="2" fill="#ffd6e0"/><rect x="87" y="18" width="22" height="12" rx="2" fill="#c9f2d0"/>',
+    build: () => tplColumns([[t('İyi gidenler'), '#2f9e44'], [t('Geliştirilecekler'), '#e8590c'], [t('Aksiyonlar'), '#7048e8']], 2),
+  },
+  {
+    id: 'swot', name: t('SWOT analizi'), desc: t('Güçlü ve zayıf yönler, fırsatlar, tehditler'),
+    preview: '<rect x="14" y="6" width="45" height="29" rx="3" fill="#2f9e44" opacity=".2"/><rect x="61" y="6" width="45" height="29" rx="3" fill="#e03131" opacity=".2"/><rect x="14" y="37" width="45" height="29" rx="3" fill="#1971c2" opacity=".2"/><rect x="61" y="37" width="45" height="29" rx="3" fill="#f08c00" opacity=".2"/>',
+    build: () => {
+      const W = 440, H = 340, gap = 24;
+      const parts = [[t('Güçlü yönler'), '#2f9e44'], [t('Zayıf yönler'), '#e03131'], [t('Fırsatlar'), '#1971c2'], [t('Tehditler'), '#f08c00']];
+      return [
+        tplText(0, -70, t('SWOT analizi'), 36),
+        ...parts.flatMap(([title, color], i) => {
+          const x = (i % 2) * (W + gap), y = Math.floor(i / 2) * (H + gap);
+          return [tplFrame(x, y, W, H, color), tplText(x + 20, y + 18, title, 26, color)];
+        }),
+      ];
+    },
+  },
+  {
+    id: 'brainstorm', name: t('Beyin fırtınası'), desc: t('Ortada konu, çevresinde fikir notları'),
+    preview: '<ellipse cx="60" cy="36" rx="18" ry="11" fill="#7048e8" opacity=".25"/><g stroke="#7048e8" stroke-width="1.2" opacity=".6"><path d="M42 33 24 18M78 33l18-15M42 39 24 54M78 39l18 15M60 25V12M60 47v13"/></g><rect x="10" y="10" width="16" height="12" rx="2" fill="#fff3a3"/><rect x="94" y="10" width="16" height="12" rx="2" fill="#ffd6e0"/><rect x="10" y="50" width="16" height="12" rx="2" fill="#c9f2d0"/><rect x="94" y="50" width="16" height="12" rx="2" fill="#cfe6ff"/>',
+    build: () => {
+      const center = { id: newId(), type: 'ellipse', x: -150, y: -85, w: 300, h: 170, color: '#7048e8', width: 3, fill: 'soft' };
+      const label = tplText(0, 0, t('Ana fikir'), 32, '#7048e8', { locked: false, align: 'center' });
+      label.x = -label.w / 2;
+      label.y = -label.h / 2;
+      const gid = newId();
+      center.groupId = gid;
+      label.groupId = gid;
+      const out = [center, label];
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI * 2) / 6;
+        const nx = Math.cos(a) * 470, ny = Math.sin(a) * 300;
+        out.push({ id: newId(), type: 'line', x1: Math.cos(a) * 160, y1: Math.sin(a) * 95, x2: nx * 0.78, y2: ny * 0.72, color: '#7048e8', width: 2 });
+        out.push(tplNote(nx - 110, ny - 70, NOTE_COLORS[i % NOTE_COLORS.length]));
+      }
+      return out;
+    },
+  },
+  {
+    id: 'week', name: t('Haftalık plan'), desc: t('Günlere bölünmüş tablo'),
+    preview: '<rect x="6" y="12" width="108" height="50" rx="2" fill="none" stroke="#1f2328" stroke-width="1.2" opacity=".6"/><rect x="6" y="12" width="108" height="9" fill="#1f2328" opacity=".12"/><path d="M21.4 12v50M36.9 12v50M52.3 12v50M67.7 12v50M83.1 12v50M98.6 12v50M6 21h108M6 41.5h108" stroke="#1f2328" stroke-width="1" opacity=".45"/>',
+    build: () => {
+      const days = [t('Pazartesi'), t('Salı'), t('Çarşamba'), t('Perşembe'), t('Cuma'), t('Cumartesi'), t('Pazar')];
+      const cw = 170, head = TABLE_FONT * 1.25 + CELL_PAD * 2, rh = 150;
+      const rowH = [head, rh, rh, rh];
+      return [
+        tplText(0, -70, t('Haftalık plan'), 36),
+        {
+          id: newId(), type: 'table', x: 0, y: 0, w: cw * 7, h: rowH.reduce((a, b) => a + b, 0),
+          colW: Array(7).fill(cw), rowH, cells: [days, ...Array.from({ length: 3 }, () => Array(7).fill(''))],
+          color: '#1f2328', fontSize: TABLE_FONT, header: true,
+        },
+      ];
+    },
+  },
+  {
+    id: 'notegrid', name: t('Not ızgarası'), desc: t('Düzenli dizilmiş boş yapışkan notlar'),
+    preview: '<g fill="#fff3a3"><rect x="30" y="6" width="18" height="18" rx="2"/><rect x="51" y="6" width="18" height="18" rx="2"/><rect x="72" y="6" width="18" height="18" rx="2"/><rect x="30" y="27" width="18" height="18" rx="2"/><rect x="51" y="27" width="18" height="18" rx="2"/><rect x="72" y="27" width="18" height="18" rx="2"/><rect x="30" y="48" width="18" height="18" rx="2"/><rect x="51" y="48" width="18" height="18" rx="2"/><rect x="72" y="48" width="18" height="18" rx="2"/></g>',
+    build: () => {
+      const size = 200, gap = 24;
+      const out = [tplText(0, -70, t('Fikirler'), 36)];
+      for (let i = 0; i < 9; i++) out.push(tplNote((i % 3) * (size + gap), Math.floor(i / 3) * (size + gap), NOTE_COLORS[0], size, size));
+      return out;
+    },
+  },
+];
+
+const templateDlg = $('#templateDlg');
+const templateDialogOpen = () => !templateDlg.classList.contains('hidden');
+
+$('#templateGrid').innerHTML = TEMPLATES.map((tp) =>
+  `<button class="tpl-card" data-template="${tp.id}"><svg viewBox="0 0 120 72">${tp.preview}</svg><b>${escHtml(tp.name)}</b><span class="muted">${escHtml(tp.desc)}</span></button>`,
+).join('');
+
+function openTemplates() {
+  commitEditor();
+  templateDlg.classList.remove('hidden');
+  templateDlg.querySelector('.tpl-card').focus();
+}
+
+function closeTemplates() {
+  templateDlg.classList.add('hidden');
+}
+
+templateDlg.addEventListener('click', (e) => {
+  if (e.target === templateDlg || e.target.closest('#tplClose')) return closeTemplates();
+  const card = e.target.closest('[data-template]');
+  if (!card) return;
+  closeTemplates();
+  insertTemplate(card.dataset.template);
+});
+templateDlg.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeTemplates();
+  }
+});
+
+function insertTemplate(id) {
+  const tp = TEMPLATES.find((x) => x.id === id);
+  if (!tp) return;
+  const els = tp.build();
+  const b = unionBBox(els);
+  const c = toWorld(innerWidth / 2, innerHeight / 2);
+  for (const el of els) translate(el, c.x - (b.x + b.w / 2), c.y - (b.y + b.h / 2));
+  checkpoint();
+  board.elements.push(...els);
+  setTool('select');
+  selection.clear();
+  // Şablon ekrana sığmıyorsa uzaklaşılır.
+  const v = board.view;
+  const pad = 90;
+  const z = Math.min(v.zoom, (innerWidth - pad * 2) / b.w, (innerHeight - pad * 2) / b.h);
+  if (z < v.zoom) {
+    v.zoom = Math.max(MIN_ZOOM, z);
+    v.x = innerWidth / 2 - c.x * v.zoom;
+    v.y = innerHeight / 2 - c.y * v.zoom;
+    sceneCacheValid = false;
+    scheduleViewSave();
+  }
+  changed();
+  toast(els.some((el) => el.locked)
+    ? t('Şablon eklendi — çerçeve ve başlıklar kilitli; seçmek için çift tıkla, kilidi Ctrl+L ile aç')
+    : t('Şablon eklendi'), 4500);
 }
 
 // ---------- Menü ----------
@@ -3532,6 +4355,7 @@ const TOOL_LABELS = {
   eraser: t('Silgi'), ruler: t('Cetveli aç / kapat'), protractor: t('Açıölçeri aç / kapat'), rect: t('Dikdörtgen'),
   ellipse: t('Elips'), line: t('Çizgi'), arrow: t('Ok'), compass: t('Pergel'), text: t('Metin'), note: t('Yapışkan not'),
   cover: t('Gizleme bandı'), image: t('Resim veya PDF ekle'), obsidian: t("Obsidian'dan ekle"), axes: t('Koordinat sistemi ekle'),
+  sticker: t('Çıkartma (emoji)'), table: t('Tablo ekle'), template: t('Şablon ekle'), link: t('Bağlantı kartı ekle'),
 };
 // Menü hızlandırıcıları ve fare/klavye kombinasyonları (araç kısayolları dışındakiler).
 const GENERAL_KEYS = [
@@ -3541,6 +4365,10 @@ const GENERAL_KEYS = [
   [['Ctrl+F'], t('Tahtada ara (Enter: sonraki, Shift+Enter: önceki)')],
   [['Ctrl+A'], t('Tümünü seç (kilitliler hariç)')], [['Delete', 'Backspace'], t('Seçileni sil')],
   [['Ctrl+L'], t('Seçileni kilitle / kilidini aç')], [[t('Çift tık')], t('Kilitli nesneyi seç; bandı aç / kapat')],
+  [['Ctrl+Shift+G'], t('Seçileni grupla / grubu çöz')], [['Ctrl', t('tıklama')], t('Gruptaki tek nesneyi seç')],
+  [['Ctrl', t('sürükle')], t('Taşırken hizalama kılavuzlarına yapışma')],
+  [['Ctrl+B', 'Ctrl+I', 'Ctrl+U'], t('Kalın / italik / altı çizili')],
+  [['Tab', 'Shift+Tab'], t('Tabloda sonraki / önceki hücre (son hücrede Tab yeni satır ekler)')],
   [[t('Ok tuşları')], t('Seçileni 1 piksel kaydır (Shift ile 10)')], [['['], t('Arkaya gönder')], [[']'], t('Öne getir')],
   [['Esc'], t('Seçimi bırak, açık pencereyi kapat')], [['Shift', t('tıklama')], t('Seçime ekle / çıkar')],
   [[t('Boşluk'), t('sürükle')], t('Tahtayı kaydır')], [['Ctrl', t('tekerlek')], t('Yakınlaştır / uzaklaştır')],
@@ -3713,7 +4541,12 @@ function obsidianPickerOpen() {
 
 // Galeri, Obsidian seçicisi ya da PDF sayfa penceresi açıkken pano ve sürükle-bırak tahtaya işlemez.
 function overlayOpen() {
-  return galleryOpen() || obsidianPickerOpen() || pdfDialogOpen() || exportDialogOpen();
+  return galleryOpen() || modalOpen();
+}
+
+// Tahtanın üstündeki pencerelerden biri (Obsidian seçicisi, PDF, dışa aktarma, metin sorma, şablon) açık mı.
+function modalOpen() {
+  return obsidianPickerOpen() || pdfDialogOpen() || exportDialogOpen() || askDialogOpen() || templateDialogOpen();
 }
 
 async function openGallery() {
@@ -4356,6 +5189,11 @@ async function insertPdf(file, at) {
 async function insertImageFiles(files, at) {
   for (const f of [...files].filter(isPdf)) await insertPdf(f, at);
   const list = [...files].filter((f) => f.type.startsWith('image/'));
+  await placeImages(list.map((f) => ({ name: f.name, load: () => readAsDataURL(f) })), at);
+}
+
+// list: [{ name, load: () => Promise<data URL> }]; resimler alt alta hafif kaydırılarak eklenir.
+async function placeImages(list, at) {
   if (!list.length) return;
   const z = board.view.zoom;
   const center = at || (pointer ? toWorld(pointer.x, pointer.y) : toWorld(innerWidth / 2, innerHeight / 2));
@@ -4363,7 +5201,7 @@ async function insertImageFiles(files, at) {
   let offset = 0;
   for (const f of list) {
     try {
-      const { src, w, h } = await prepareImage(await readAsDataURL(f));
+      const { src, w, h } = await prepareImage(await f.load());
       const k = Math.min(1 / z, (innerWidth * 0.5) / z / w, (innerHeight * 0.5) / z / h);
       created.push({
         id: newId(), type: 'image', src,
@@ -4450,13 +5288,23 @@ document.addEventListener('drop', (e) => {
   e.preventDefault();
   // Masaüstünden sürüklenen .tahta dosyası: tahtayı aç (galeri açıkken de çalışır)
   const boardFile = [...(e.dataTransfer?.files || [])].find((f) => /\.tahta$/i.test(f.name));
-  if (boardFile && !obsidianPickerOpen() && !pdfDialogOpen() && !exportDialogOpen()) {
+  if (boardFile && !modalOpen()) {
     const p = api.pathForFile(boardFile);
     if (p) openBoardPath(p);
     return;
   }
   if (overlayOpen()) return;
-  if (e.dataTransfer?.files.length) insertImageFiles(e.dataTransfer.files, toWorld(e.clientX, e.clientY));
+  const at = toWorld(e.clientX, e.clientY);
+  if (e.dataTransfer?.files.length) return insertImageFiles(e.dataTransfer.files, at);
+  // Tarayıcıdan sürüklenen resim ya da bağlantı: resim indirilir, sayfa bağlantısı kart olur.
+  const html = e.dataTransfer?.getData('text/html') || '';
+  const img = /<img[^>]+src="(https?:[^"]+)"/i.exec(html)?.[1];
+  const uri = (e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '').split(/\r?\n/)[0].trim();
+  if (img) insertImageUrl(img.replace(/&amp;/g, '&'), at);
+  else if (URL_RE.test(uri)) {
+    if (IMAGE_URL_RE.test(uri)) insertImageUrl(uri, at);
+    else addLinkCard(uri, at);
+  }
 });
 
 // ---------- Pano (kopyala / yapıştır) ----------
@@ -4466,7 +5314,7 @@ document.addEventListener('copy', (e) => {
   const sel = selectedEls();
   // Kopya yorumsuzdur; kes-yapıştır ise nesneyi yorumlarıyla taşır.
   e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel.map(withoutComments)));
-  e.clipboardData.setData('text/plain', sel.filter((el) => el.text).map((el) => el.text).join('\n\n'));
+  e.clipboardData.setData('text/plain', sel.map(ownText).filter(Boolean).join('\n\n'));
   e.preventDefault();
 });
 
@@ -4498,10 +5346,13 @@ document.addEventListener('paste', (e) => {
   if (files.length) return insertImageFiles(files, at);
 
   const text = dt.getData('text/plain').trim();
+  // Tek başına bir web adresi: resim adresiyse resim, değilse bağlantı kartı.
+  if (URL_RE.test(text)) return IMAGE_URL_RE.test(text) ? insertImageUrl(text, at) : addLinkCard(text, at);
   if (text) {
     checkpoint();
     const fs = styles.text.fontSize;
-    const el = { id: newId(), type: 'text', x: at.x, y: at.y, text, color: styles.text.color, fontSize: fs, ...measureText(text, fs) };
+    const fmt = fmtOf(styles.text);
+    const el = { id: newId(), type: 'text', x: at.x, y: at.y, text, color: styles.text.color, fontSize: fs, ...fmt, ...measureText(text, fs, fmt) };
     board.elements.push(el);
     setTool('select');
     selection = new Set([el.id]);
@@ -4519,7 +5370,7 @@ function isTyping(e) {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.target === editor || obsidianPickerOpen() || pdfDialogOpen() || exportDialogOpen()) return;
+  if (e.target === editor || modalOpen()) return;
   // Paneldeki yazı kutusuna (ör. fonksiyon) yazılan harfler araç seçmesin, Delete nesne silmesin.
   if (isTyping(e) && !galleryOpen() && !helpOpen()) return;
   if (galleryOpen()) return galleryKeydown(e);
@@ -4569,6 +5420,11 @@ window.addEventListener('keydown', (e) => {
       updateProps();
       requestRender();
     } else if (k === 'd') { e.preventDefault(); duplicateSelection(); }
+    else if (k === 'g' && e.shiftKey) { e.preventDefault(); toggleGroup(); }
+    else if ((k === 'b' || k === 'i' || k === 'u') && !e.shiftKey && selectionIsEditable()) {
+      e.preventDefault();
+      toggleFmt({ b: 'bold', i: 'italic', u: 'underline' }[k]);
+    }
     else if (k === 'm' && e.shiftKey) { e.preventDefault(); commentOnSelection(); }
     else if (k === 'l') { e.preventDefault(); if (studentMode || selectedEls().some((el) => el.locked)) toggleLock(); }
     else if ((k === 'c' || k === 'x') && selection.size) {

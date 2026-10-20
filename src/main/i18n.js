@@ -74,6 +74,9 @@ const EN = {
   'Bölüm notta bulunamadı; başlığın adı değişmiş olabilir.': 'Section not found in the note; the heading may have been renamed.',
   'Bölüm resme dönüştürülemedi: {hata}': 'Could not render the section: {hata}',
   'Formül çizilemedi: {hata}': 'Could not render the formula: {hata}',
+  'Geçersiz adres.': 'Invalid address.',
+  'Dosya çok büyük.': 'The file is too large.',
+  'Adres bir resim değil.': 'The address is not an image.',
 };
 
 function setLang(l) {

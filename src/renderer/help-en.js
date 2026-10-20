@@ -91,9 +91,10 @@ export const HELP_EN = {
 
     <h3>Shapes</h3>
     <p><b>Rectangle</b> <kbd>7</kbd>/<kbd>D</kbd>, <b>Ellipse</b> <kbd>8</kbd>/<kbd>O</kbd>, <b>Line</b> <kbd>9</kbd>/<kbd>L</kbd>, <b>Arrow</b> <kbd>0</kbd>/<kbd>A</kbd>. Press and drag on the board to draw.</p>
+    <p>The shapes group also has a <b>triangle</b>, <b>right triangle</b>, <b>diamond</b>, <b>pentagon</b>, <b>hexagon</b>, <b>star</b> and <b>speech bubble</b> (no shortcuts; right-click or press and hold the group button). They fill the box you drag; afterwards they resize and rotate freely.</p>
     <ul>
-      <li>With <kbd>Shift</kbd>: the rectangle becomes a square, the ellipse a circle; lines and arrows snap to 15° angles.</li>
-      <li><b>Fill:</b> for rectangles and ellipses choose <i>None</i>, <i>Light</i> (semi-transparent) or <i>Solid</i> in the panel.</li>
+      <li>With <kbd>Shift</kbd>: the rectangle becomes a square, the ellipse a circle, ready-made shapes get equal width and height; lines and arrows snap to 15° angles.</li>
+      <li><b>Fill:</b> for rectangles, ellipses and ready-made shapes choose <i>None</i>, <i>Light</i> (semi-transparent) or <i>Solid</i> in the panel.</li>
       <li>Color and thickness are set in the panel; they also apply to selected shapes.</li>
     </ul>
   `,
@@ -103,15 +104,31 @@ export const HELP_EN = {
     <ul>
       <li><b>One object:</b> click it. A frame and corner handles appear around it.</li>
       <li><b>Several objects:</b> starting from an empty spot, draw around the objects (<b>lasso</b>); or hold <kbd>Shift</kbd> and click to add / remove them one by one. <kbd>Ctrl+A</kbd> selects everything.</li>
+      <li><b>A single object in a group:</b> hold <kbd>Ctrl</kbd> and click (see "Grouping" below).</li>
       <li><b>Clear the selection:</b> click an empty spot or press <kbd>Esc</kbd>.</li>
     </ul>
 
     <h3>Moving, resizing and rotating</h3>
     <ul>
-      <li><b>Move:</b> drag the selected object or press the arrow keys (1 pixel; 10 pixels with <kbd>Shift</kbd>).</li>
+      <li><b>Move:</b> drag the selected object or press the arrow keys (1 pixel; 10 pixels with <kbd>Shift</kbd>). While dragging, pink <b>alignment guides</b> appear when you get close to the edges or centers of other objects on screen, and the object snaps to them; hold <kbd>Ctrl</kbd> to move without snapping.</li>
       <li><b>Resize:</b> drag a corner handle. Rectangles, ellipses, polygons and notes resize freely; other objects keep their proportions.</li>
       <li><b>Rotate:</b> drag the round handle above the selection; the object turns 360° around its own center and the angle is shown next to it. It snaps near 0°, 90°, 180° and 270°; with <kbd>Shift</kbd> held it turns in 15° steps. <b>↺ 90°</b> / <b>↻ 90°</b> in the panel turn a quarter turn. With several objects selected they all rotate together. Rotated objects keep their proportions when resized; a rotated image cannot be cropped. The coordinate system cannot be rotated.</li>
       <li><b>Line and arrow ends:</b> with a single line or arrow selected, move each end separately using the handles at its two ends.</li>
+    </ul>
+
+    <h3>Grouping <kbd>Ctrl+Shift+G</kbd></h3>
+    <ul>
+      <li>Select several objects and press <b>Group</b> in the panel or <kbd>Ctrl+Shift+G</kbd>. A group behaves like one object: clicking any member, lassoing part of it or <kbd>Shift</kbd>+click selects the whole group; it moves, resizes, rotates and copies together.</li>
+      <li>To pick a single object in a group (e.g. to change its color), <kbd>Ctrl</kbd>+click it. Text, notes and tables in a group are still edited by double-clicking.</li>
+      <li><b>Ungroup</b> (or <kbd>Ctrl+Shift+G</kbd> again with a single group selected) separates the objects. Groups are saved with the board; a duplicated group becomes a new, separate group.</li>
+    </ul>
+
+    <h3>Aligning, distributing and grid</h3>
+    <p>With two or more objects (or groups) selected, an alignment row appears in the panel. Each group counts as one object.</p>
+    <ul>
+      <li><b>Align left / center horizontally / right</b> and <b>top / center vertically / bottom</b>: the objects are aligned to the selection's frame.</li>
+      <li><b>Distribute horizontally / vertically</b> (at least three objects): the gaps between them are made equal; the first and last objects stay in place.</li>
+      <li><b>Arrange in a grid:</b> puts the selected notes (or other objects) into tidy rows and columns in reading order — handy for tidying up scattered sticky notes.</li>
     </ul>
 
     <h3>Copying and duplicating</h3>
@@ -178,8 +195,29 @@ export const HELP_EN = {
       <li>Resize it with the handles and move it by dragging.</li>
     </ul>
 
+    <h3>Text formatting</h3>
+    <p>With text, a note or a table selected (or while typing), a formatting row appears in the panel. Formatting applies to the whole text:</p>
+    <ul>
+      <li><b>Bold</b> <kbd>Ctrl+B</kbd>, <b>italic</b> <kbd>Ctrl+I</kbd>, <b>underline</b> <kbd>Ctrl+U</kbd>.</li>
+      <li><b>Alignment:</b> left, center, right.</li>
+      <li><b>Bulleted</b> and <b>numbered list:</b> each non-empty line gets a • or 1., 2., … in front. The markers are hidden while typing and appear when you finish.</li>
+      <li>With nothing selected, the formatting you pick in the Text or Note tool applies to your next texts.</li>
+    </ul>
+
+    <h3>Table <kbd>Y</kbd></h3>
+    <ul>
+      <li>Press <b>Table</b> in the Insert group (or <kbd>Y</kbd>): a 3×3 table appears in the middle of the screen and you start typing in the first cell.</li>
+      <li><kbd>Tab</kbd> moves to the next cell, <kbd>Shift+Tab</kbd> to the previous one; <kbd>Tab</kbd> in the last cell adds a row. <kbd>Enter</kbd> starts a new line in the cell, <kbd>Esc</kbd> finishes.</li>
+      <li>To edit a cell later, <b>double-click</b> it (or click it with the Text tool). Rows grow with their text automatically.</li>
+      <li><b>+ Row</b>, <b>+ Column</b>, <b>− Row</b>, <b>− Column</b> in the panel: applied to the edited cell's row / column while a cell is being edited, otherwise to the last row / column. <b>Header row</b> makes the first row bold and tinted.</li>
+      <li>Color, font size and text formatting are chosen in the panel. A table resizes freely from its corner (columns and rows grow proportionally); it cannot be rotated.</li>
+    </ul>
+
+    <h3>Stickers <kbd>M</kbd></h3>
+    <p>Pick the <b>Sticker</b> tool in the text group (or <kbd>M</kbd>), choose an emoji in the panel (👍 ❤️ ⭐ ✅ 💡 …) and click wherever you like on the board. Every click places a sticker. The emoji of selected stickers can be changed in the panel; they resize and rotate like images. The eraser removes stickers only while "Also erase notes and images" is on.</p>
+
     <h3>Pasting from the clipboard</h3>
-    <p>If you paste <b>plain text</b> copied from elsewhere with <kbd>Ctrl+V</kbd>, it becomes a text object where the cursor is. A copied <b>image</b> (e.g. a screenshot) is inserted as an image.</p>
+    <p>If you paste <b>plain text</b> copied from elsewhere with <kbd>Ctrl+V</kbd>, it becomes a text object where the cursor is. A copied <b>image</b> (e.g. a screenshot) is inserted as an image. Pasting just a <b>web address</b> makes a link card; if the address points to an image (.png, .jpg…), the image is downloaded and inserted.</p>
   `,
 
   insert: `
@@ -191,6 +229,26 @@ export const HELP_EN = {
       <li>Paste an image from the clipboard with <kbd>Ctrl+V</kbd> (e.g. a screenshot taken with <kbd>Win+Shift+S</kbd>).</li>
     </ul>
     <p>The inserted image is embedded in the board file; it stays on the board even if you delete the original. Very large images make the board file large too.</p>
+
+    <h3>Images from the web</h3>
+    <ul>
+      <li>Press <b>Search images on the web</b> in the Insert group and type what you are looking for: the search (Bing Images) opens in your default browser.</li>
+      <li><b>Drag</b> the image you like from the browser onto the board, or right-click it, choose <b>Copy image</b> and press <kbd>Ctrl+V</kbd> on the board. The image is downloaded and embedded in the board file.</li>
+    </ul>
+
+    <h3>Link card <kbd>F</kbd></h3>
+    <ul>
+      <li>Press <b>Link card</b> in the Insert group (or <kbd>F</kbd>) and enter a web address; or paste the address straight onto the board / drag it from the browser.</li>
+      <li>The card shows the page's <b>title</b>, a short <b>description</b> and the domain (the details are read from the internet; without a connection only the address is shown).</li>
+      <li><b>Double-click</b> the card to open the page in your default browser. The panel has <b>Open link</b> and <b>Refresh details</b>.</li>
+    </ul>
+
+    <h3>Templates <kbd>J</kbd></h3>
+    <p>Press <b>Template</b> in the Insert group (or <kbd>J</kbd>) and pick a ready-made layout: <b>Kanban</b>, <b>Retrospective</b>, <b>SWOT analysis</b>, <b>Brainstorm</b>, <b>Weekly plan</b> (a table split into days) or <b>Note grid</b>. The template is placed in the middle of the screen; the view zooms out if it doesn't fit.</p>
+    <ul>
+      <li>Column frames and titles come <b>locked</b>: you can move notes over them freely and they don't shift while lassoing. To change a frame, double-click to select it and unlock it with <kbd>Ctrl+L</kbd>.</li>
+      <li><kbd>Ctrl+Z</kbd> removes the template again.</li>
+    </ul>
 
     <h3>Inserting PDFs</h3>
     <p>Choose the PDF with the image button or drag it onto the window. <b>Each page is inserted as a separate image</b>, one below the other; you can take notes on them with the pen.</p>

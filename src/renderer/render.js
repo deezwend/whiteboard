@@ -1,5 +1,5 @@
 // Öğeleri ve arka planı tuvale çizer.
-import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, arrowHeadSize, normRect, BRUSH_WIDTH } from './geometry.js';
+import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, CELL_PAD, arrowHeadSize, normRect, BRUSH_WIDTH } from './geometry.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
 
 // Açılmış gizleme bantlarının kimlikleri. Dosyaya kaydedilmez: tahta her açıldığında bantlar kapalıdır.
@@ -69,23 +69,81 @@ function drawImageSmooth(ctx, img, x, y, w, h) {
 
 const measureCtx = document.createElement('canvas').getContext('2d');
 
-export function font(size) {
-  return `${size}px ${FONT_FAMILY}`;
+export const EMOJI_FONT = '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+
+// fmt: metin biçimi (öğenin kendisi olabilir) — bold, italic, underline, align, list.
+export function font(size, fmt) {
+  return `${fmt?.italic ? 'italic ' : ''}${fmt?.bold ? '700 ' : ''}${size}px ${FONT_FAMILY}`;
+}
+
+// Metni satırlara böler. Liste açıksa her dolu paragrafın başına madde işareti ya da numara konur
+// ve bütün satırlar işaret genişliği kadar içeriden başlar. maxWidth verilirse satırlar kaydırılır.
+// ctx.font önceden ayarlanmış olmalı.
+export function layoutText(ctx, text, fmt, maxWidth = Infinity) {
+  const paras = text.split('\n');
+  let n = 0;
+  const marks = paras.map((p) => {
+    if (!fmt?.list || !p.trim()) return '';
+    n++;
+    return fmt.list === 'number' ? `${n}. ` : '• ';
+  });
+  const indent = fmt?.list ? Math.max(ctx.measureText('• ').width, ...marks.map((m) => ctx.measureText(m).width)) : 0;
+  const lines = [];
+  paras.forEach((p, i) => {
+    const parts = maxWidth === Infinity ? [p] : wrapText(ctx, p, Math.max(1, maxWidth - indent));
+    parts.forEach((text, k) => lines.push({ text, mark: k ? '' : marks[i] }));
+  });
+  return { lines, indent };
 }
 
 // Metin öğesinin genişlik/yüksekliğini hesaplar.
-export function measureText(text, fontSize) {
-  measureCtx.font = font(fontSize);
-  const lines = text.split('\n');
+export function measureText(text, fontSize, fmt) {
+  measureCtx.font = font(fontSize, fmt);
+  const { lines, indent } = layoutText(measureCtx, text, fmt);
   let w = 0;
-  for (const line of lines) w = Math.max(w, measureCtx.measureText(line).width);
+  for (const line of lines) w = Math.max(w, indent + measureCtx.measureText(line.text).width);
   return { w: Math.max(w, fontSize * 0.5), h: lines.length * fontSize * LINE_HEIGHT };
 }
 
-// Notun içindeki metnin satır kaydırmalı yüksekliği.
-export function wrappedHeight(text, fontSize, maxWidth) {
-  measureCtx.font = font(fontSize);
-  return wrapText(measureCtx, text, maxWidth).length * fontSize * LINE_HEIGHT;
+// Notun (ya da tablo hücresinin) içindeki metnin satır kaydırmalı yüksekliği.
+export function wrappedHeight(text, fontSize, maxWidth, fmt) {
+  measureCtx.font = font(fontSize, fmt);
+  return layoutText(measureCtx, text, fmt, maxWidth).lines.length * fontSize * LINE_HEIGHT;
+}
+
+// Liste işaretlerinin genişliği (düzenleyicinin soldan boşluğu için).
+export function listIndent(text, fontSize, fmt) {
+  if (!fmt?.list) return 0;
+  measureCtx.font = font(fontSize, fmt);
+  return layoutText(measureCtx, text, fmt).indent;
+}
+
+// layoutText'in satırlarını (x, y)'den başlayarak `width` genişliğinde hizalayıp yazar.
+function drawLines(ctx, fmt, layout, x, y, width, fontSize) {
+  const lh = fontSize * LINE_HEIGHT;
+  const pad = (lh - fontSize) / 2;
+  const { lines, indent } = layout;
+  lines.forEach((l, i) => {
+    const tw = ctx.measureText(l.text).width;
+    const free = width - indent - tw;
+    const off = fmt?.align === 'center' ? free / 2 : fmt?.align === 'right' ? free : 0;
+    const ty = y + pad + i * lh;
+    if (l.mark) ctx.fillText(l.mark, x + off, ty);
+    ctx.fillText(l.text, x + off + indent, ty);
+    if (fmt?.underline && l.text.trim()) ctx.fillRect(x + off + indent, ty + fontSize * 0.98, tw, Math.max(1, fontSize / 15));
+  });
+}
+
+// Sığmayan metnin sonunu "…" ile kısaltır.
+function ellipsize(ctx, text, maxWidth) {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(text.slice(0, mid) + '…').width <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  return text.slice(0, lo).trimEnd() + '…';
 }
 
 export function wrapText(ctx, text, maxWidth) {
@@ -387,8 +445,33 @@ function drawHatch(ctx, el) {
     const lo = s === 1 ? minX + minY : minX - maxY;
     const hi = s === 1 ? maxX + maxY : maxX - minY;
     for (let c = Math.floor(lo / step) * step; c <= hi; c += step) {
-      ctx.moveTo(minX, s * (c - minX));
-      ctx.lineTo(maxX, s * (c - maxX));
+      // Kısmi silgiyle oyulan dairelerin (el.cuts) kestiği aralıklar çizgiden çıkarılır.
+      // Çizgi y = s·(c − x); dairenin x aralığı (x − cx)² + (x − d)² = r², d = c − s·cy.
+      const gaps = [];
+      if (el.cuts) {
+        for (const [cx, cy, r] of el.cuts) {
+          const d = c - s * cy;
+          const disc = 2 * r * r - (cx - d) ** 2;
+          if (disc > 0) {
+            const q = Math.sqrt(disc);
+            gaps.push([(cx + d - q) / 2, (cx + d + q) / 2]);
+          }
+        }
+        gaps.sort((a, b) => a[0] - b[0]);
+      }
+      let x = minX;
+      for (const [g0, g1] of gaps) {
+        if (g0 > x) {
+          ctx.moveTo(x, s * (c - x));
+          ctx.lineTo(Math.min(g0, maxX), s * (c - Math.min(g0, maxX)));
+        }
+        if (g1 > x) x = g1;
+        if (x >= maxX) break;
+      }
+      if (x < maxX) {
+        ctx.moveTo(x, s * (c - x));
+        ctx.lineTo(maxX, s * (c - maxX));
+      }
     }
   }
   ctx.stroke();
@@ -536,11 +619,9 @@ export function drawElement(ctx, el, hideText = false) {
         }
       }
       ctx.fillStyle = el.color;
-      ctx.font = font(el.fontSize);
+      ctx.font = font(el.fontSize, el);
       ctx.textBaseline = 'top';
-      const lh = el.fontSize * LINE_HEIGHT;
-      const pad = (lh - el.fontSize) / 2;
-      el.text.split('\n').forEach((line, i) => ctx.fillText(line, el.x, el.y + pad + i * lh));
+      drawLines(ctx, el, layoutText(ctx, el.text, el), el.x, el.y, el.w, el.fontSize);
       break;
     }
 
@@ -554,17 +635,34 @@ export function drawElement(ctx, el, hideText = false) {
       ctx.shadowColor = 'transparent';
       if (hideText) break;
       ctx.fillStyle = '#1f2328';
-      ctx.font = font(el.fontSize);
+      ctx.font = font(el.fontSize, el);
       ctx.textBaseline = 'top';
-      const lh = el.fontSize * LINE_HEIGHT;
-      const pad = (lh - el.fontSize) / 2;
-      const lines = wrapText(ctx, el.text, el.w - NOTE_PADDING * 2);
+      const inner = el.w - NOTE_PADDING * 2;
       ctx.beginPath();
       ctx.rect(el.x, el.y, el.w, el.h);
       ctx.clip();
-      lines.forEach((line, i) => ctx.fillText(line, el.x + NOTE_PADDING, el.y + NOTE_PADDING + pad + i * lh));
+      drawLines(ctx, el, layoutText(ctx, el.text, el, inner), el.x + NOTE_PADDING, el.y + NOTE_PADDING, inner, el.fontSize);
       break;
     }
+
+    case 'table':
+      drawTable(ctx, el, hideText);
+      break;
+
+    case 'sticker': {
+      const b = normRect(el.x, el.y, el.w, el.h);
+      const size = Math.min(b.w, b.h);
+      ctx.fillStyle = '#1f2328';
+      ctx.font = `${size * 0.86}px ${EMOJI_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(el.emoji, b.x + b.w / 2, b.y + b.h / 2 + size * 0.04);
+      break;
+    }
+
+    case 'link':
+      drawLink(ctx, el);
+      break;
 
     case 'image': {
       const img = getImage(el.src);
@@ -586,6 +684,110 @@ export function drawElement(ctx, el, hideText = false) {
       break;
   }
   ctx.restore();
+}
+
+// Tablo: colW / rowH dünya birimiyle sütun genişlikleri ve satır yükseklikleri, cells[satır][sütun]
+// hücre metinleri. Başlık satırı (header) kalın yazılır ve hafif renklidir. hide { r, c } verilirse o
+// hücrenin yazısı çizilmez (üstünde düzenleyici açık).
+function drawTable(ctx, el, hide) {
+  const fs = el.fontSize;
+  if (el.header && el.rowH.length) {
+    ctx.fillStyle = hexToRgba(el.color, 0.1);
+    ctx.fillRect(el.x, el.y, el.w, el.rowH[0]);
+  }
+  ctx.fillStyle = el.color;
+  ctx.textBaseline = 'top';
+  let y = el.y;
+  el.rowH.forEach((rh, r) => {
+    let x = el.x;
+    const fmt = { ...el, bold: el.bold || (el.header && r === 0) };
+    ctx.font = font(fs, fmt);
+    el.colW.forEach((cw, c) => {
+      const text = el.cells[r]?.[c] || '';
+      if (text && !(hide && hide.r === r && hide.c === c)) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, cw, rh);
+        ctx.clip();
+        const inner = cw - CELL_PAD * 2;
+        drawLines(ctx, fmt, layoutText(ctx, text, fmt, inner), x + CELL_PAD, y + CELL_PAD, inner, fs);
+        ctx.restore();
+      }
+      x += cw;
+    });
+    y += rh;
+  });
+  ctx.strokeStyle = el.color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  let x = el.x;
+  for (const cw of el.colW.slice(0, -1)) {
+    x += cw;
+    ctx.moveTo(x, el.y);
+    ctx.lineTo(x, el.y + el.h);
+  }
+  y = el.y;
+  for (const rh of el.rowH.slice(0, -1)) {
+    y += rh;
+    ctx.moveTo(el.x, y);
+    ctx.lineTo(el.x + el.w, y);
+  }
+  ctx.rect(el.x, el.y, el.w, el.h);
+  ctx.stroke();
+}
+
+// Bağlantı kartı: başlık, açıklama ve alan adı. 340×84'lük bir tasarım alanında çizilip kutuya ölçeklenir.
+export const LINK_SIZE = { w: 340, h: 84 };
+
+function drawLink(ctx, el) {
+  const b = normRect(el.x, el.y, el.w, el.h);
+  const H = LINK_SIZE.h;
+  const k = b.h / H;
+  const W = b.w / k;
+  ctx.translate(b.x, b.y);
+  ctx.scale(k, k);
+  ctx.shadowColor = 'rgba(0,0,0,0.12)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 2;
+  roundRectPath(ctx, 0, 0, W, H, 10);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = '#d0d7de';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.clip();
+  const pad = 14;
+  const icon = 44;
+  roundRectPath(ctx, pad, (H - icon) / 2, icon, icon, 9);
+  ctx.fillStyle = '#e7f0fb';
+  ctx.fill();
+  ctx.font = `22px ${EMOJI_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('\u{1F517}', pad + icon / 2, H / 2 + 1);
+  const tx = pad * 2 + icon;
+  const tw = Math.max(10, W - tx - pad);
+  const host = linkHost(el.url);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#1f2328';
+  ctx.font = `600 15px ${FONT_FAMILY}`;
+  ctx.fillText(ellipsize(ctx, el.title || host, tw), tx, 14);
+  ctx.fillStyle = '#57606a';
+  ctx.font = `13px ${FONT_FAMILY}`;
+  if (el.desc) ctx.fillText(ellipsize(ctx, el.desc, tw), tx, 36);
+  ctx.fillStyle = '#1971c2';
+  ctx.font = `12px ${FONT_FAMILY}`;
+  ctx.fillText(ellipsize(ctx, host, tw), tx, el.desc ? 57 : 40);
+}
+
+export function linkHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
 }
 
 // Gizleme bandı: kapalıyken altını tamamen örten desenli şerit, açıkken yalnızca kesikli çerçeve.

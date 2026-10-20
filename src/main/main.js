@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -663,6 +663,103 @@ ipcMain.handle('export:png', async (_e, dataUrl) => {
   const buf = Buffer.from(dataUrl.split(',')[1], 'base64');
   fs.writeFileSync(res.filePath, buf);
   return res.filePath;
+});
+
+// ---------- Web bağlantıları ----------
+// Bağlantı kartı için sayfanın başlığını ve açıklamasını, tarayıcıdan sürüklenen resim için de resmin
+// kendisini indirir. Yalnızca http(s) adresleri kabul edilir; okunan veri boyut ve süreyle sınırlıdır.
+
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/avif'];
+
+function webUrl(u) {
+  try {
+    const x = new URL(String(u));
+    return x.protocol === 'http:' || x.protocol === 'https:' ? x : null;
+  } catch {
+    return null;
+  }
+}
+
+// En fazla maxBytes okur; truncate ise fazlası kesilir (sayfanın başı yeter), değilse hata verir.
+async function fetchLimited(url, maxBytes, timeoutMs, truncate) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await net.fetch(url, { signal: ac.signal, redirect: 'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const chunks = [];
+    let total = 0;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      chunks.push(Buffer.from(value));
+      if (total > maxBytes) {
+        reader.cancel().catch(() => {});
+        if (!truncate) throw new Error(L('Dosya çok büyük.'));
+        break;
+      }
+    }
+    return { type: (res.headers.get('content-type') || '').toLowerCase(), buf: Buffer.concat(chunks) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function decodeEntities(s) {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+    .replace(/&(amp|lt|gt|quot|apos|nbsp|#39);/g, (_m, n) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" })[n])
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// <meta property/name="…" content="…"> etiketlerinden ve <title>'dan başlık ve açıklama.
+function pageInfo(html) {
+  const meta = {};
+  for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+    const attr = (n) => new RegExp(String.raw`\b${n}\s*=\s*("([^"]*)"|'([^']*)')`, 'i').exec(tag);
+    const key = attr('property') || attr('name');
+    const content = attr('content');
+    if (key && content) meta[(key[2] ?? key[3]).toLowerCase()] ??= content[2] ?? content[3];
+  }
+  const title = meta['og:title'] || meta['twitter:title'] || /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] || '';
+  const desc = meta['og:description'] || meta['twitter:description'] || meta.description || '';
+  return { title: decodeEntities(title).slice(0, 200), desc: decodeEntities(desc).slice(0, 300) };
+}
+
+ipcMain.handle('link:info', async (_e, u) => {
+  const url = webUrl(u);
+  if (!url) return { error: L('Geçersiz adres.') };
+  try {
+    const { type, buf } = await fetchLimited(url.href, 512 * 1024, 8000, true);
+    if (!type.includes('html')) return { title: '', desc: '' };
+    return pageInfo(buf.toString('utf8'));
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('link:open', (_e, u) => {
+  const url = webUrl(u);
+  if (!url) return false;
+  shell.openExternal(url.href);
+  return true;
+});
+
+ipcMain.handle('net:image', async (_e, u) => {
+  const url = webUrl(u);
+  if (!url) return { error: L('Geçersiz adres.') };
+  try {
+    const { type, buf } = await fetchLimited(url.href, 20 * 1024 * 1024, 20000, false);
+    const mime = type.split(';')[0].trim();
+    if (!IMAGE_TYPES.includes(mime)) return { error: L('Adres bir resim değil.') };
+    return { src: `data:${mime};base64,${buf.toString('base64')}` };
+  } catch (err) {
+    return { error: err.message };
+  }
 });
 
 // ---------- Tema ----------
