@@ -1,5 +1,5 @@
 // Öğeleri ve arka planı tuvale çizer.
-import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, CELL_PAD, arrowHeadSize, normRect, BRUSH_WIDTH } from './geometry.js';
+import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, CELL_PAD, arrowHeadSize, normRect, BRUSH_WIDTH, bbox } from './geometry.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
 
 // Açılmış gizleme bantlarının kimlikleri. Dosyaya kaydedilmez: tahta her açıldığında bantlar kapalıdır.
@@ -181,12 +181,49 @@ function hexToRgba(hex, a) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
-// Kovayla boyanan şekiller dolgu rengini fillColor alanında taşır; yoksa kenar rengi kullanılır.
+// Kovayla boyanan şekiller dolgu rengini fillColor, opaklığını fillOpacity alanında taşır;
+// yoksa kenar rengi ve tam opaklık kullanılır.
 function fillStyle(el) {
   const c = el.fillColor || el.color;
-  if (el.fill === 'soft') return hexToRgba(c, 0.18);
-  if (el.fill === 'solid') return c;
+  const a = el.fillOpacity ?? 1;
+  if (el.fill === 'soft') return hexToRgba(c, 0.18 * a);
+  if (el.fill === 'solid') return a < 1 ? hexToRgba(c, a) : c;
   return null;
+}
+
+// Opaklığı düşük çizgiler önce ayrı bir katmana tam opak çizilip sonra saydam kopyalanır;
+// böylece parça parça çizilen fırçaların üst üste binen uçları koyulaşmaz.
+let strokeLayer = null;
+function drawStrokeFaded(ctx, el) {
+  const m = ctx.getTransform();
+  const b = bbox(el);
+  const pad = el.width * 2 + 4;
+  const xs = [b.x - pad, b.x + b.w + pad], ys = [b.y - pad, b.y + b.h + pad];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const x of xs) for (const y of ys) {
+    const p = m.transformPoint({ x, y });
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+  x1 = Math.min(ctx.canvas.width, Math.ceil(x1)); y1 = Math.min(ctx.canvas.height, Math.ceil(y1));
+  const w = x1 - x0, h = y1 - y0;
+  if (w <= 0 || h <= 0) return;
+  if (!strokeLayer) strokeLayer = document.createElement('canvas');
+  if (strokeLayer.width < w || strokeLayer.height < h) {
+    strokeLayer.width = Math.max(strokeLayer.width, w);
+    strokeLayer.height = Math.max(strokeLayer.height, h);
+  }
+  const lc = strokeLayer.getContext('2d');
+  lc.setTransform(1, 0, 0, 1, 0, 0);
+  lc.globalAlpha = 1;
+  lc.clearRect(0, 0, w, h);
+  lc.setTransform(m.a, m.b, m.c, m.d, m.e - x0, m.f - y0);
+  drawStroke(lc, el);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha *= el.opacity;
+  ctx.drawImage(strokeLayer, 0, 0, w, h, x0, y0, w, h);
+  ctx.restore();
 }
 
 // Noktalar arasından orta noktalara ikinci derece eğrilerle geçerek yumuşak çizgi.
@@ -572,7 +609,8 @@ export function drawElement(ctx, el, hideText = false) {
   }
   switch (el.type) {
     case 'stroke':
-      drawStroke(ctx, el);
+      if (el.opacity < 1) drawStrokeFaded(ctx, el);
+      else drawStroke(ctx, el);
       break;
 
     case 'line':

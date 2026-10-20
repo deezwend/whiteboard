@@ -36,7 +36,7 @@ export function findRegion(elements, seed, zoom) {
   const grow = (GAP * 2) / scale;
   for (const el of walls) {
     // Dolgusuz, düz fırçalı ve biraz kalın çizilir: kesikli çizgi de duvar sayılsın, renk önemsiz.
-    drawElement(ctx, { ...el, color: '#000', fill: 'none', brush: undefined, highlighter: false, width: (el.width || 1) + grow });
+    drawElement(ctx, { ...el, color: '#000', fill: 'none', brush: undefined, highlighter: false, opacity: undefined, width: (el.width || 1) + grow });
   }
   const data = ctx.getImageData(0, 0, W, H).data;
   const wall = new Uint8Array(W * H);

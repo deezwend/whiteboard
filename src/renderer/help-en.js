@@ -87,6 +87,7 @@ export const HELP_EN = {
       <li>If the area is the whole inside of a shape, the shape's own fill changes; the paint moves with the shape.</li>
       <li>Otherwise a separate fill in the area's outline is added. It sits under the lines; you can select it, move it, change its color or delete it.</li>
       <li>Clicking a painted area again with another color changes its color.</li>
+      <li>Use the <b>Opacity</b> slider in the panel to make the paint semi-transparent. The same slider sets the opacity of pen strokes; you can change it later by selecting them with the select tool.</li>
     </ul>
 
     <h3>Ruler <kbd>6</kbd> / <kbd>R</kbd></h3>

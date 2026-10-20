@@ -448,6 +448,8 @@ const EN = {
   // Metin biçimi
   'Kalın (Ctrl+B)': 'Bold (Ctrl+B)',
   'Kalınlık — sürükleyin, tekerlek ya da ok tuşlarıyla ince ayar yapın': 'Thickness — drag, or fine-tune with the mouse wheel or arrow keys',
+  'Opaklık': 'Opacity',
+  'Opaklık — sürükleyin, tekerlek ya da ok tuşlarıyla ince ayar yapın': 'Opacity — drag, or fine-tune with the mouse wheel or arrow keys',
   'İtalik (Ctrl+I)': 'Italic (Ctrl+I)',
   'Altı çizili (Ctrl+U)': 'Underline (Ctrl+U)',
   'Sola hizala': 'Align left',

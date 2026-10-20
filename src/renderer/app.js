@@ -58,6 +58,7 @@ function widthToSlider(w, [lo, hi]) {
   return Math.round(Math.sqrt(Math.min(1, Math.max(0, (w - lo) / (hi - lo)))) * 1000);
 }
 let widthDrag = false;
+let opacityDrag = false;
 // Galaksi fırçasının renk seçenekleri: 'classic' klasik uzay renkleridir (öğeye yazılmaz),
 // diğerleri öğenin galaxy alanına yazılır ve render.js o renkten bir palet türetir.
 const GALAXY_TINTS = ['classic', '#e03131', '#f08c00', '#2f9e44', '#0c8599', '#1971c2', '#7048e8', '#c2255c', '#1f2328'];
@@ -194,7 +195,7 @@ rebuildKeymap();
 // ---------- Durum ----------
 
 const styles = {
-  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal', galaxy: 'classic', hatch: 'fwd' },
+  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal', galaxy: 'classic', hatch: 'fwd', opacity: 1 },
   highlighter: { color: '#ffd400', width: 18 },
   tempHighlighter: { color: '#ffd400', width: 18 },
   shape: { color: '#1f2328', width: 3, fill: 'none' },
@@ -203,7 +204,7 @@ const styles = {
   sticker: { emoji: '👍' },
   cover: { color: '#4a7cf0' },
   laser: { color: '#ff2d2d' },
-  bucket: { color: '#1971c2' },
+  bucket: { color: '#1971c2', opacity: 1 },
   eraser: { mode: 'stroke', all: false }, // mode: 'stroke' (bütün çizgi) | 'partial' (kısmi)
 };
 // PDF eklerken sayfalar kilitlensin mi; PDF dışa aktarma / yazdırma seçenekleri.
@@ -1073,6 +1074,7 @@ const FILL_OVER = ['text', 'sticker', 'link', 'axes'];
 
 function bucketFill(w) {
   const color = styles.bucket.color;
+  const opacity = styles.bucket.opacity ?? 1;
   const res = findRegion(board.elements, w, board.view.zoom);
   if (res.error) {
     toast(res.error === 'line' ? t('Çizginin üstüne değil, kapalı alanın içine tıkla') : t('Burada kapalı bir alan yok — şeklin kenarı açık olabilir'));
@@ -1090,17 +1092,20 @@ function bucketFill(w) {
     }
   }
   if (match) {
-    if (match.fill === 'solid' && (match.fillColor || match.color) === color) return;
+    if (match.fill === 'solid' && (match.fillColor || match.color) === color && (match.fillOpacity ?? 1) === opacity) return;
     checkpoint();
     if (match.bucket) match.color = color;
     else {
       match.fill = 'solid';
       match.fillColor = color;
     }
+    if (opacity < 1) match.fillOpacity = opacity;
+    else delete match.fillOpacity;
     changed();
     return;
   }
   const el = { id: newId(), type: 'polygon', points: res.points, color, width: 0, fill: 'solid', bucket: true };
+  if (opacity < 1) el.fillOpacity = opacity;
   const fb = bbox(el);
   let top = board.elements.length, floor = 0;
   board.elements.forEach((o, i) => {
@@ -1299,6 +1304,7 @@ canvas.addEventListener('pointerdown', (e) => {
       if (t === 'pen' && st.brush !== 'normal') el.brush = st.brush;
       if (el.brush === 'galaxy' && st.galaxy && st.galaxy !== 'classic') el.galaxy = st.galaxy;
       if (el.brush === 'hatch' && st.hatch && st.hatch !== 'fwd') el.hatch = st.hatch;
+      if (t === 'pen' && st.opacity < 1) el.opacity = st.opacity;
       board.elements.push(el);
       drag = { kind: 'draw', el, straight: false, anchor: 0 };
       autoHideProps();
@@ -3058,6 +3064,12 @@ function propsContext() {
         ctx.values.hatch = sel.every((el) => (el.hatch || 'fwd') === h) ? h : null;
       }
     }
+    // Opaklık: fırça çizgilerinde çizginin, kovayla boyanmış alanlarda dolgunun opaklığı.
+    const faded = sel.find((el) => hasOpacity(el));
+    if (faded) {
+      ctx.opacity = true;
+      ctx.values.opacity = faded.type === 'stroke' ? faded.opacity ?? 1 : faded.fillOpacity ?? 1;
+    }
     if (hasOutlined('rect', 'ellipse', 'polygon')) {
       ctx.fill = true;
       ctx.values.fill = outlined.find((el) => ['rect', 'ellipse', 'polygon'].includes(el.type)).fill;
@@ -3099,6 +3111,7 @@ function propsContext() {
       brushes: true,
       hatch: brush.id === 'hatch',
       toShape: brush.id !== 'arrow' && brush.id !== 'dashedarrow' && brush.id !== 'hatch',
+      opacity: true,
       values: galaxy ? { ...styles.pen, color: styles.pen.galaxy || 'classic' } : styles.pen,
     };
   }
@@ -3113,7 +3126,7 @@ function propsContext() {
   if (t === 'note') return { noteColors: true, font: true, textFmt: true, values: { ...styles.note, noteColor: styles.note.color } };
   if (t === 'sticker') return { stickers: true, values: styles.sticker };
   if (t === 'eraser') return { eraser: true };
-  if (t === 'bucket') return { colors: INK_COLORS, values: styles.bucket };
+  if (t === 'bucket') return { colors: INK_COLORS, opacity: true, values: styles.bucket };
   if (t === 'laser') return { colors: LASER_COLORS, values: styles.laser };
   return null;
 }
@@ -3203,6 +3216,13 @@ function updateProps() {
     showWidthValue(v.width);
   }
 
+  const opacityRow = $('#opacityRow');
+  opacityRow.classList.toggle('hidden', !c.opacity);
+  if (c.opacity) {
+    if (!opacityDrag) $('#opacityRange').value = Math.round((v.opacity ?? 1) * 100);
+    showOpacityValue(v.opacity);
+  }
+
   const fontRow = $('#fontRow');
   fontRow.classList.toggle('hidden', !c.font);
   if (c.font) {
@@ -3283,6 +3303,16 @@ function updateProps() {
   $('[data-to-shape]').classList.toggle('selected', !!styles.pen.toShape);
 }
 
+// Opaklığı ayarlanabilen öğeler: fırça çizgileri ve kovayla boyanmış alanlar / şekiller.
+function hasOpacity(el) {
+  if (el.type === 'stroke') return !el.highlighter;
+  return ['rect', 'ellipse', 'polygon'].includes(el.type) && (el.bucket || !!el.fillColor);
+}
+
+function showOpacityValue(o) {
+  $('#opacityRow .opacity-val').textContent = `${Math.round((o ?? 1) * 100)}%`;
+}
+
 // Kalınlık kaydırıcısının yanındaki sayı ve önizleme noktası.
 function showWidthValue(w) {
   const row = $('#widthRow');
@@ -3315,6 +3345,11 @@ function applyStyle(prop, value, keepUndo = false) {
       if (prop === 'noteColor' && el.type === 'note') el.color = value;
       if (prop === 'width' && ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.width = value;
       if (prop === 'fill' && ['rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.fill = value;
+      if (prop === 'opacity' && hasOpacity(el)) {
+        const key = el.type === 'stroke' ? 'opacity' : 'fillOpacity';
+        if (value < 1) el[key] = value;
+        else delete el[key];
+      }
       if (prop === 'galaxy' && el.type === 'stroke' && el.brush === 'galaxy') {
         if (value === 'classic') delete el.galaxy;
         else el.galaxy = value;
@@ -3495,6 +3530,27 @@ $('#widthRange').addEventListener('wheel', (e) => {
   const w = Math.min(hi, Math.max(lo, cur + (e.deltaY < 0 ? 0.5 : -0.5)));
   if (w === cur) return;
   applyStyle('width', w);
+}, { passive: false });
+
+// Opaklık kaydırıcısı: kalınlıkta olduğu gibi sürükleme tek geri alma adımıdır.
+$('#opacityRange').addEventListener('input', (e) => {
+  const o = Number(e.target.value) / 100;
+  showOpacityValue(o);
+  if (o === (propsContext()?.values?.opacity ?? 1)) return;
+  const keep = opacityDrag;
+  opacityDrag = true;
+  applyStyle('opacity', o, keep);
+});
+$('#opacityRange').addEventListener('change', () => {
+  opacityDrag = false;
+  updateProps();
+});
+$('#opacityRange').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const cur = propsContext()?.values?.opacity ?? 1;
+  const o = Math.min(1, Math.max(0.05, Math.round((cur + (e.deltaY < 0 ? 0.05 : -0.05)) * 100) / 100));
+  if (o === cur) return;
+  applyStyle('opacity', o);
 }, { passive: false });
 
 // Çip içindeki düzenlemeyi bitirir: save ise geçerli denklemi yazar, değilse vazgeçer.
