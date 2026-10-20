@@ -3064,12 +3064,9 @@ function propsContext() {
         ctx.values.hatch = sel.every((el) => (el.hatch || 'fwd') === h) ? h : null;
       }
     }
-    // Opaklık: fırça çizgilerinde çizginin, kovayla boyanmış alanlarda dolgunun opaklığı.
-    const faded = sel.find((el) => hasOpacity(el));
-    if (faded) {
-      ctx.opacity = true;
-      ctx.values.opacity = faded.type === 'stroke' ? faded.opacity ?? 1 : faded.fillOpacity ?? 1;
-    }
+    // Opaklık: kovayla boyanmış alanlarda dolgunun, diğer her öğede öğenin tamamının opaklığı.
+    ctx.opacity = true;
+    ctx.values.opacity = sel[0][opacityKey(sel[0])] ?? 1;
     if (hasOutlined('rect', 'ellipse', 'polygon')) {
       ctx.fill = true;
       ctx.values.fill = outlined.find((el) => ['rect', 'ellipse', 'polygon'].includes(el.type)).fill;
@@ -3303,10 +3300,10 @@ function updateProps() {
   $('[data-to-shape]').classList.toggle('selected', !!styles.pen.toShape);
 }
 
-// Opaklığı ayarlanabilen öğeler: fırça çizgileri ve kovayla boyanmış alanlar / şekiller.
-function hasOpacity(el) {
-  if (el.type === 'stroke') return !el.highlighter;
-  return ['rect', 'ellipse', 'polygon'].includes(el.type) && (el.bucket || !!el.fillColor);
+// Kovayla boyanmış alan / şekillerde kaydırıcı dolgunun opaklığını (fillOpacity), diğer
+// öğelerde öğenin tamamının opaklığını (opacity) ayarlar.
+function opacityKey(el) {
+  return ['rect', 'ellipse', 'polygon'].includes(el.type) && (el.bucket || el.fillColor) ? 'fillOpacity' : 'opacity';
 }
 
 function showOpacityValue(o) {
@@ -3345,8 +3342,8 @@ function applyStyle(prop, value, keepUndo = false) {
       if (prop === 'noteColor' && el.type === 'note') el.color = value;
       if (prop === 'width' && ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.width = value;
       if (prop === 'fill' && ['rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.fill = value;
-      if (prop === 'opacity' && hasOpacity(el)) {
-        const key = el.type === 'stroke' ? 'opacity' : 'fillOpacity';
+      if (prop === 'opacity') {
+        const key = opacityKey(el);
         if (value < 1) el[key] = value;
         else delete el[key];
       }

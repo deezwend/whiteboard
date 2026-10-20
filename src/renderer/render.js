@@ -191,13 +191,15 @@ function fillStyle(el) {
   return null;
 }
 
-// Opaklığı düşük çizgiler önce ayrı bir katmana tam opak çizilip sonra saydam kopyalanır;
-// böylece parça parça çizilen fırçaların üst üste binen uçları koyulaşmaz.
-let strokeLayer = null;
-function drawStrokeFaded(ctx, el) {
+// Opaklığı düşük öğeler önce ayrı bir katmana tam opak çizilip sonra saydam kopyalanır;
+// böylece parça parça çizilen fırçaların uçları ya da şeklin kenarıyla dolgusu üst üste
+// bindiği yerde koyulaşmaz.
+let fadeLayer = null;
+function drawFaded(ctx, el, draw) {
   const m = ctx.getTransform();
   const b = bbox(el);
-  const pad = el.width * 2 + 4;
+  // Notun gölgesi kutunun dışına taşar.
+  const pad = (el.width || 0) * 2 + (el.type === 'note' ? 16 : 4);
   const xs = [b.x - pad, b.x + b.w + pad], ys = [b.y - pad, b.y + b.h + pad];
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const x of xs) for (const y of ys) {
@@ -208,21 +210,21 @@ function drawStrokeFaded(ctx, el) {
   x1 = Math.min(ctx.canvas.width, Math.ceil(x1)); y1 = Math.min(ctx.canvas.height, Math.ceil(y1));
   const w = x1 - x0, h = y1 - y0;
   if (w <= 0 || h <= 0) return;
-  if (!strokeLayer) strokeLayer = document.createElement('canvas');
-  if (strokeLayer.width < w || strokeLayer.height < h) {
-    strokeLayer.width = Math.max(strokeLayer.width, w);
-    strokeLayer.height = Math.max(strokeLayer.height, h);
+  if (!fadeLayer) fadeLayer = document.createElement('canvas');
+  if (fadeLayer.width < w || fadeLayer.height < h) {
+    fadeLayer.width = Math.max(fadeLayer.width, w);
+    fadeLayer.height = Math.max(fadeLayer.height, h);
   }
-  const lc = strokeLayer.getContext('2d');
+  const lc = fadeLayer.getContext('2d');
   lc.setTransform(1, 0, 0, 1, 0, 0);
   lc.globalAlpha = 1;
   lc.clearRect(0, 0, w, h);
   lc.setTransform(m.a, m.b, m.c, m.d, m.e - x0, m.f - y0);
-  drawStroke(lc, el);
+  draw(lc);
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha *= el.opacity;
-  ctx.drawImage(strokeLayer, 0, 0, w, h, x0, y0, w, h);
+  ctx.drawImage(fadeLayer, 0, 0, w, h, x0, y0, w, h);
   ctx.restore();
 }
 
@@ -598,6 +600,11 @@ function roundRectPath(ctx, x, y, w, h, r) {
 }
 
 export function drawElement(ctx, el, hideText = false) {
+  // Opaklık (el.opacity) her öğe türünde aynı şekilde, ayrı katman üzerinden uygulanır.
+  if (el.opacity < 1) {
+    drawFaded(ctx, el, (lc) => drawElement(lc, { ...el, opacity: undefined }, hideText));
+    return;
+  }
   ctx.save();
   if (el.rot) {
     // Döndürülmüş kutu öğesi: merkezi etrafında döndürülüp düz hâli gibi çizilir.
@@ -609,8 +616,7 @@ export function drawElement(ctx, el, hideText = false) {
   }
   switch (el.type) {
     case 'stroke':
-      if (el.opacity < 1) drawStrokeFaded(ctx, el);
-      else drawStroke(ctx, el);
+      drawStroke(ctx, el);
       break;
 
     case 'line':
