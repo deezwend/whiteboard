@@ -136,7 +136,7 @@ export const HELP_EN = {
       <li><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd>: copy, cut, paste. Pasted objects appear where the cursor is.</li>
       <li><kbd>Ctrl+D</kbd> or <b>Duplicate</b> in the panel: copies the selection right next to it.</li>
       <li>You can also copy and paste into another board.</li>
-      <li><b>Scissors</b> (<kbd>S</kbd>): to take only part of a drawing, drag a rectangle around that part. Lines crossing the rectangle are cut at its border and the pieces inside are selected; then cut with <kbd>Ctrl+X</kbd>, copy with <kbd>Ctrl+C</kbd>, drag them apart or delete with <kbd>Delete</kbd>. <kbd>Ctrl+Z</kbd> rejoins the cut lines. Images, text, notes and filled shapes are not cut; if inside the rectangle they are selected whole.</li>
+      <li><b>Scissors</b> (<kbd>S</kbd>): to take only part of a drawing, drag a rectangle around that part. Lines crossing the rectangle are cut at its border and the pieces inside are selected; then cut with <kbd>Ctrl+X</kbd>, copy with <kbd>Ctrl+C</kbd>, drag them apart or delete with <kbd>Delete</kbd>. <kbd>Ctrl+Z</kbd> rejoins the cut lines. Images (including PDF pages and Obsidian sections) are cut at the rectangle border too; rotated images, text, notes and filled shapes are not cut, and are selected whole if inside the rectangle.</li>
     </ul>
 
     <h3>Ordering and deleting</h3>

@@ -1708,7 +1708,7 @@ function cutWithLasso(lasso) {
   const replacements = new Map();
   for (const el of board.elements) {
     if (el.locked) continue;
-    const parts = splitByLasso(el, lasso);
+    const parts = el.type === 'image' ? splitImageByRect(el, lasso) : splitByLasso(el, lasso);
     if (parts && parts.inside.length) {
       replacements.set(el, carryComments(el, [...parts.outside, ...parts.inside]));
       picked.push(...parts.inside);
@@ -1727,6 +1727,41 @@ function cutWithLasso(lasso) {
   if (replacements.size) changed();
   updateProps();
   toast(t('Parça seçildi — Ctrl+X kes, Ctrl+C kopyala ya da sürükleyip taşı'));
+}
+
+// Makas resmi (PDF sayfası, Obsidian bölümü de resimdir) dikdörtgenden böler: kesişen bölüm
+// içeride, kalan üst/alt/sol/sağ şeritler dışarıda ayrı resimler olur. Dikdörtgen resmi
+// kesmiyorsa, resim döndürülmüşse ya da henüz yüklenmediyse null döner (bütün olarak değerlendirilir).
+function splitImageByRect(el, lasso) {
+  if (el.rot) return null;
+  const img = getImage(el.src);
+  if (!img.complete || !img.naturalWidth) return null;
+  const xs = lasso.map((p) => p[0]), ys = lasso.map((p) => p[1]);
+  const r = { x: Math.min(...xs), y: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+  const b = { x: Math.min(el.x, el.x + el.w), y: Math.min(el.y, el.y + el.h), w: Math.abs(el.w), h: Math.abs(el.h) };
+  const x1 = Math.max(b.x, r.x), y1 = Math.max(b.y, r.y);
+  const x2 = Math.min(b.x + b.w, r.x2), y2 = Math.min(b.y + b.h, r.y2);
+  const eps = 0.5;
+  if (x2 - x1 < eps || y2 - y1 < eps) return null;
+  if (x1 - b.x < eps && y1 - b.y < eps && b.x + b.w - x2 < eps && b.y + b.h - y2 < eps) return null;
+  const kx = img.naturalWidth / b.w;
+  const ky = img.naturalHeight / b.h;
+  const jpeg = el.src.startsWith('data:image/jpeg');
+  // Parçalar kaynağı hatırlamaz: Obsidian yenilemesi her parçaya bütün bölümü geri koyardı.
+  const { obsidian, comments, commentsResolved, ...base } = el;
+  const piece = (x, y, w, h) => {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * kx));
+    c.height = Math.max(1, Math.round(h * ky));
+    c.getContext('2d').drawImage(img, (x - b.x) * kx, (y - b.y) * ky, w * kx, h * ky, 0, 0, c.width, c.height);
+    return { ...base, id: newId(), src: c.toDataURL(jpeg ? 'image/jpeg' : 'image/png', 0.92), x, y, w, h };
+  };
+  const outside = [];
+  if (y1 - b.y >= eps) outside.push(piece(b.x, b.y, b.w, y1 - b.y));
+  if (b.y + b.h - y2 >= eps) outside.push(piece(b.x, y2, b.w, b.y + b.h - y2));
+  if (x1 - b.x >= eps) outside.push(piece(b.x, y1, x1 - b.x, y2 - y1));
+  if (b.x + b.w - x2 >= eps) outside.push(piece(x2, y1, b.x + b.w - x2, y2 - y1));
+  return { inside: [piece(x1, y1, x2 - x1, y2 - y1)], outside };
 }
 
 // Elle çizilen şekli düzgün şekle çevirir. Ayrı bir geri alma adımı olduğu için
