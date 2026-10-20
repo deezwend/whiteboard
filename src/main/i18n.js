@@ -3,7 +3,7 @@
 // {ad} biçimindeki yer tutucular params nesnesiyle doldurulur.
 
 const LANGS = ['tr', 'en'];
-let lang = 'tr';
+let lang = 'en';
 
 const EN = {
   // Menü
@@ -80,7 +80,7 @@ const EN = {
 };
 
 function setLang(l) {
-  lang = LANGS.includes(l) ? l : 'tr';
+  lang = LANGS.includes(l) ? l : 'en';
   return lang;
 }
 

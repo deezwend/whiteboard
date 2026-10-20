@@ -784,10 +784,10 @@ ipcMain.handle('theme:set', (_e, mode) => {
 
 // ---------- Dil ----------
 
-// Kayıtlı bir tercih yoksa Windows dili Türkçe ise Türkçe, değilse İngilizce açılır.
+// Kayıtlı bir tercih yoksa uygulama İngilizce açılır.
 function initLang() {
   const saved = readSettings().lang;
-  i18n.setLang(i18n.LANGS.includes(saved) ? saved : app.getLocale().toLowerCase().startsWith('tr') ? 'tr' : 'en');
+  i18n.setLang(i18n.LANGS.includes(saved) ? saved : 'en');
 }
 
 // Preload sayfa yüklenirken senkron sorar; renderer metinleri bu dille kurulur.
