@@ -126,6 +126,10 @@ const EN = {
   'Geçici fosforlu kalem': 'Temporary highlighter',
   'Lazer işaretçi': 'Laser pointer',
   'Silgi': 'Eraser',
+  'Boya kovası': 'Paint bucket',
+  'Boya kovası — kapalı bir şeklin içine tıklayarak boya': 'Paint bucket — click inside a closed shape to paint it',
+  'Çizginin üstüne değil, kapalı alanın içine tıkla': 'Click inside the closed area, not on the line',
+  'Burada kapalı bir alan yok — şeklin kenarı açık olabilir': 'No closed area here — the outline may have a gap',
   'Cetveli aç / kapat': 'Show / hide ruler',
   'Açıölçeri aç / kapat': 'Show / hide protractor',
   'Dikdörtgen': 'Rectangle',
@@ -443,6 +447,7 @@ const EN = {
 
   // Metin biçimi
   'Kalın (Ctrl+B)': 'Bold (Ctrl+B)',
+  'Kalınlık — sürükleyin, tekerlek ya da ok tuşlarıyla ince ayar yapın': 'Thickness — drag, or fine-tune with the mouse wheel or arrow keys',
   'İtalik (Ctrl+I)': 'Italic (Ctrl+I)',
   'Altı çizili (Ctrl+U)': 'Underline (Ctrl+U)',
   'Sola hizala': 'Align left',

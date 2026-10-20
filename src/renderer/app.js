@@ -8,6 +8,7 @@ import {
   LINK_SIZE,
 } from './render.js';
 import { recognizeShape, shapeToPoints } from './recognize.js';
+import { findRegion, isBoundary, shapeArea } from './fill.js';
 import { createRuler, rulerHit, nearEdge, projectOnEdge, snapAngle, drawRuler } from './ruler.js';
 import { createProtractor, protractorHit, nearArc, setArm, drawProtractor, PROT_R } from './protractor.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
@@ -43,6 +44,20 @@ const PEN_WIDTHS = [1.5, 3, 6, 10, 16];
 const HIGHLIGHT_WIDTHS = [10, 18, 28, 40];
 const SHAPE_WIDTHS = [1.5, 3, 6, 10];
 const TAPE_WIDTHS = [10, 18, 28, 40];
+// Kalınlık kaydırıcısının aralığı; hazır değer listesine göre seçilir.
+function widthRange(widths) {
+  if (widths === PEN_WIDTHS) return [0.5, 30];
+  if (widths === SHAPE_WIDTHS) return [0.5, 24];
+  return [4, 60];
+}
+// Kaydırıcı karekök ölçeklidir: ince kalınlıklarda daha hassas ayar sağlar.
+function sliderToWidth(s, [lo, hi]) {
+  return Math.round((lo + (hi - lo) * (s / 1000) ** 2) * 2) / 2;
+}
+function widthToSlider(w, [lo, hi]) {
+  return Math.round(Math.sqrt(Math.min(1, Math.max(0, (w - lo) / (hi - lo)))) * 1000);
+}
+let widthDrag = false;
 // Galaksi fırçasının renk seçenekleri: 'classic' klasik uzay renkleridir (öğeye yazılmaz),
 // diğerleri öğenin galaxy alanına yazılır ve render.js o renkten bir palet türetir.
 const GALAXY_TINTS = ['classic', '#e03131', '#f08c00', '#2f9e44', '#0c8599', '#1971c2', '#7048e8', '#c2255c', '#1f2328'];
@@ -119,6 +134,7 @@ const SHORTCUTS = [
   { target: 'tempHighlighter', key: 'g', num: '4' },
   { target: 'laser', key: 'w' },
   { target: 'eraser', key: 'e', num: '5' },
+  { target: 'bucket', key: 'z' },
   { target: 'ruler', key: 'r', num: '6', alt: 'u' },
   { target: 'protractor', key: 'q' },
   { target: 'rect', key: 'd', num: '7' },
@@ -187,6 +203,7 @@ const styles = {
   sticker: { emoji: '👍' },
   cover: { color: '#4a7cf0' },
   laser: { color: '#ff2d2d' },
+  bucket: { color: '#1971c2' },
   eraser: { mode: 'stroke', all: false }, // mode: 'stroke' (bütün çizgi) | 'partial' (kısmi)
 };
 // PDF eklerken sayfalar kilitlensin mi; PDF dışa aktarma / yazdırma seçenekleri.
@@ -1046,6 +1063,55 @@ function setAllCovers(show) {
   toast(show ? t('Bütün bantlar açıldı') : t('Bütün bantlar kapatıldı'));
 }
 
+// ---------- Kova ----------
+// Tıklanan noktayı çevreleyen kapalı alanı boyar. Bulunan alan bir şeklin içinin tamamıysa şeklin
+// kendi dolgusu, daha önce kovayla boyanmış aynı alansa o dolgunun rengi değişir; değilse alanın
+// biçiminde kenarsız bir dolgu çokgeni (bucket) eklenir: sınır çizgilerinin ve yazıların altına,
+// altında kalan resim / not / dolgulu şekillerin üstüne.
+const FILL_UNDER = ['image', 'note', 'table'];
+const FILL_OVER = ['text', 'sticker', 'link', 'axes'];
+
+function bucketFill(w) {
+  const color = styles.bucket.color;
+  const res = findRegion(board.elements, w, board.view.zoom);
+  if (res.error) {
+    toast(res.error === 'line' ? t('Çizginin üstüne değil, kapalı alanın içine tıkla') : t('Burada kapalı bir alan yok — şeklin kenarı açık olabilir'));
+    return;
+  }
+  const filled = (el) => ['rect', 'ellipse', 'polygon'].includes(el.type) && el.fill !== 'none';
+  let match = null, best = Infinity;
+  for (const el of board.elements) {
+    if (el.locked || !['rect', 'ellipse', 'polygon'].includes(el.type)) continue;
+    if (!hitTest({ ...el, fill: 'solid', width: 0 }, w.x, w.y, 0)) continue;
+    const off = Math.abs(res.area / (shapeArea(el) || 1) - 1);
+    if (off < 0.15 && off <= best) {
+      best = off;
+      match = el;
+    }
+  }
+  if (match) {
+    if (match.fill === 'solid' && (match.fillColor || match.color) === color) return;
+    checkpoint();
+    if (match.bucket) match.color = color;
+    else {
+      match.fill = 'solid';
+      match.fillColor = color;
+    }
+    changed();
+    return;
+  }
+  const el = { id: newId(), type: 'polygon', points: res.points, color, width: 0, fill: 'solid', bucket: true };
+  const fb = bbox(el);
+  let top = board.elements.length, floor = 0;
+  board.elements.forEach((o, i) => {
+    if ((isBoundary(o) || FILL_OVER.includes(o.type)) && i < top && rectsIntersect(bbox(o), fb)) top = i;
+    if ((FILL_UNDER.includes(o.type) || filled(o)) && hitTest(o, w.x, w.y, 0)) floor = i + 1;
+  });
+  checkpoint();
+  board.elements.splice(Math.max(top, floor), 0, el);
+  changed();
+}
+
 function selectionIsEditable() {
   return activeTool() === 'select' && selection.size > 0;
 }
@@ -1324,6 +1390,10 @@ canvas.addEventListener('pointerdown', (e) => {
       changed();
       break;
     }
+
+    case 'bucket':
+      bucketFill(w);
+      break;
 
     case 'select':
       startSelectDrag(e, w);
@@ -2758,7 +2828,7 @@ function updateCursor(e) {
   if (drag?.kind === 'pan' || drag?.kind === 'rotate') c = 'grabbing';
   else if (t === 'hand') c = 'grab';
   else if (t === 'pen' || t === 'highlighter' || t === 'tempHighlighter') c = brushCursor(styles[t], t !== 'pen');
-  else if (SHAPE_TOOLS.includes(t) || t === 'note' || t === 'cover' || t === 'cut' || t === 'sticker') c = 'crosshair';
+  else if (SHAPE_TOOLS.includes(t) || t === 'note' || t === 'cover' || t === 'cut' || t === 'sticker' || t === 'bucket') c = 'crosshair';
   else if (t === 'eraser' || t === 'laser') c = 'none';
   else if (t === 'text') c = 'text';
   const ph = protractor && e && !drag && t !== 'hand' ? protractorHit(protractor, e.clientX, e.clientY) : null;
@@ -2970,10 +3040,13 @@ function propsContext() {
     ctx.cover = has('cover');
     ctx.axes = sel.length === 1 && sel[0].type === 'axes' ? sel[0] : null;
     ctx.cropable = sel.length === 1 && sel[0].type === 'image' && !sel[0].locked;
-    if (has('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon')) {
+    // Kova dolgusunun kenarı ve dolgu seçeneği yoktur; yalnızca rengi değişir.
+    const outlined = sel.filter((el) => !el.bucket);
+    const hasOutlined = (...types) => outlined.some((el) => types.includes(el.type));
+    if (hasOutlined('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon')) {
       ctx.widths = sel.every((el) => el.highlighter) ? HIGHLIGHT_WIDTHS
         : sel.every((el) => el.brush === 'tape') ? TAPE_WIDTHS : PEN_WIDTHS;
-      ctx.values.width = first('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon').width;
+      ctx.values.width = outlined.find((el) => ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type)).width;
     }
     if (sel.every((el) => el.type === 'stroke' && !el.highlighter)) {
       ctx.brushes = true;
@@ -2985,9 +3058,9 @@ function propsContext() {
         ctx.values.hatch = sel.every((el) => (el.hatch || 'fwd') === h) ? h : null;
       }
     }
-    if (has('rect', 'ellipse', 'polygon')) {
+    if (hasOutlined('rect', 'ellipse', 'polygon')) {
       ctx.fill = true;
-      ctx.values.fill = first('rect', 'ellipse', 'polygon').fill;
+      ctx.values.fill = outlined.find((el) => ['rect', 'ellipse', 'polygon'].includes(el.type)).fill;
     }
     if (has(...TEXT_TYPES)) {
       ctx.font = true;
@@ -3040,6 +3113,7 @@ function propsContext() {
   if (t === 'note') return { noteColors: true, font: true, textFmt: true, values: { ...styles.note, noteColor: styles.note.color } };
   if (t === 'sticker') return { stickers: true, values: styles.sticker };
   if (t === 'eraser') return { eraser: true };
+  if (t === 'bucket') return { colors: INK_COLORS, values: styles.bucket };
   if (t === 'laser') return { colors: LASER_COLORS, values: styles.laser };
   return null;
 }
@@ -3116,10 +3190,17 @@ function updateProps() {
   widthRow.classList.toggle('hidden', !c.widths);
   if (c.widths) {
     const max = c.widths[c.widths.length - 1];
-    widthRow.innerHTML = c.widths.map((w) => {
+    widthRow.querySelector('.width-presets').innerHTML = c.widths.map((w) => {
       const size = Math.max(3, Math.round((w / max) * 20));
       return `<button class="width-btn${w === v.width ? ' selected' : ''}" data-width="${w}" title="${w}px"><span style="width:${size}px;height:${size}px"></span></button>`;
     }).join('');
+    const range = widthRange(c.widths);
+    const slider = $('#widthRange');
+    slider.dataset.lo = range[0];
+    slider.dataset.hi = range[1];
+    // Sürüklerken değeri geri yazma; yuvarlama başparmağı titretir.
+    if (!widthDrag) slider.value = widthToSlider(v.width ?? range[0], range);
+    showWidthValue(v.width);
   }
 
   const fontRow = $('#fontRow');
@@ -3202,8 +3283,18 @@ function updateProps() {
   $('[data-to-shape]').classList.toggle('selected', !!styles.pen.toShape);
 }
 
+// Kalınlık kaydırıcısının yanındaki sayı ve önizleme noktası.
+function showWidthValue(w) {
+  const row = $('#widthRow');
+  row.querySelector('.width-val').textContent = w == null ? '' : `${w} px`;
+  const d = Math.max(2, Math.min(22, w || 0));
+  const dot = row.querySelector('.width-dot span');
+  dot.style.width = dot.style.height = `${d}px`;
+}
+
 // Seçim varsa seçili öğelere, yoksa aracın varsayılanına uygular.
-function applyStyle(prop, value) {
+// keepUndo: kaydırıcı sürüklenirken her adımda yeni geri alma noktası açma.
+function applyStyle(prop, value, keepUndo = false) {
   if (editing) {
     const el = editing.el;
     if (prop === 'color' && (el.type === 'text' || el.type === 'table')) el.color = value;
@@ -3218,12 +3309,12 @@ function applyStyle(prop, value) {
     return;
   }
   if (selectionIsEditable()) {
-    checkpoint();
+    if (!keepUndo) checkpoint();
     for (const el of selectedEls()) {
       if (prop === 'color' && !['note', 'image', 'sticker', 'link'].includes(el.type)) el.color = value;
       if (prop === 'noteColor' && el.type === 'note') el.color = value;
-      if (prop === 'width' && ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type)) el.width = value;
-      if (prop === 'fill' && ['rect', 'ellipse', 'polygon'].includes(el.type)) el.fill = value;
+      if (prop === 'width' && ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.width = value;
+      if (prop === 'fill' && ['rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.fill = value;
       if (prop === 'galaxy' && el.type === 'stroke' && el.brush === 'galaxy') {
         if (value === 'classic') delete el.galaxy;
         else el.galaxy = value;
@@ -3269,8 +3360,8 @@ function applyStyle(prop, value) {
   styles[key][prop === 'noteColor' ? 'color' : prop] = value;
   // Bant ile diğer fırçalar farklı kalınlık listeleri kullanır; geçişte uygun bir kalınlık seç.
   if (prop === 'brush') {
-    const widths = value === 'tape' ? TAPE_WIDTHS : PEN_WIDTHS;
-    if (!widths.includes(styles.pen.width)) styles.pen.width = value === 'tape' ? 18 : 3;
+    const [lo, hi] = widthRange(value === 'tape' ? TAPE_WIDTHS : PEN_WIDTHS);
+    if (!(styles.pen.width >= lo && styles.pen.width <= hi)) styles.pen.width = value === 'tape' ? 18 : 3;
   }
   savePrefs();
   updateProps();
@@ -3378,6 +3469,33 @@ $('#props').addEventListener('click', (e) => {
 $('#props').addEventListener('change', (e) => {
   if (e.target.type === 'color') applyStyle($('#colorRow').dataset.prop || 'color', e.target.value);
 });
+
+// Kalınlık kaydırıcısı: sürükledikçe canlı uygular; bir sürükleme tek geri alma adımıdır.
+function sliderWidth(slider) {
+  return sliderToWidth(Number(slider.value), [Number(slider.dataset.lo), Number(slider.dataset.hi)]);
+}
+$('#widthRange').addEventListener('input', (e) => {
+  const w = sliderWidth(e.target);
+  showWidthValue(w);
+  if (w === propsContext()?.values?.width) return;
+  const keep = widthDrag;
+  widthDrag = true;
+  applyStyle('width', w, keep);
+});
+$('#widthRange').addEventListener('change', () => {
+  widthDrag = false;
+  updateProps();
+});
+// Tekerlek: yarım piksellik adımlarla ince ayar.
+$('#widthRange').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const slider = e.target;
+  const lo = Number(slider.dataset.lo), hi = Number(slider.dataset.hi);
+  const cur = propsContext()?.values?.width ?? sliderWidth(slider);
+  const w = Math.min(hi, Math.max(lo, cur + (e.deltaY < 0 ? 0.5 : -0.5)));
+  if (w === cur) return;
+  applyStyle('width', w);
+}, { passive: false });
 
 // Çip içindeki düzenlemeyi bitirir: save ise geçerli denklemi yazar, değilse vazgeçer.
 function finishFnEdit(save) {
@@ -4387,7 +4505,7 @@ const helpOpen = () => !help.classList.contains('hidden');
 // Araç hedeflerinin rehberdeki adları (SHORTCUTS tablosunun tek eksiği bu etiketler).
 const TOOL_LABELS = {
   select: t('Seç'), cut: t('Makas (parça kes / kopyala)'), pen: t('Kalem'), highlighter: t('Fosforlu kalem'), tempHighlighter: t('Geçici fosforlu kalem'), laser: t('Lazer işaretçi'),
-  eraser: t('Silgi'), ruler: t('Cetveli aç / kapat'), protractor: t('Açıölçeri aç / kapat'), rect: t('Dikdörtgen'),
+  eraser: t('Silgi'), bucket: t('Boya kovası'), ruler: t('Cetveli aç / kapat'), protractor: t('Açıölçeri aç / kapat'), rect: t('Dikdörtgen'),
   ellipse: t('Elips'), line: t('Çizgi'), arrow: t('Ok'), compass: t('Pergel'), text: t('Metin'), note: t('Yapışkan not'),
   cover: t('Gizleme bandı'), image: t('Resim veya PDF ekle'), obsidian: t("Obsidian'dan ekle"), axes: t('Koordinat sistemi ekle'),
   sticker: t('Çıkartma (emoji)'), table: t('Tablo ekle'), template: t('Şablon ekle'), link: t('Bağlantı kartı ekle'),
@@ -5399,9 +5517,16 @@ document.addEventListener('paste', (e) => {
 
 let nudgeTime = 0;
 
+// Yazı almayan girdiler (kaydırıcı, onay kutusu…) yalnızca kendi kullandığı yön tuşlarını tutar;
+// odak onlarda kalsa da harf kısayolları çalışsın.
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'number', 'email', 'url', 'tel', 'password']);
+const CONTROL_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
+
 function isTyping(e) {
   const t = e.target;
-  return t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+  if (!(t instanceof HTMLElement)) return false;
+  if (t.tagName === 'INPUT' && !TEXT_INPUT_TYPES.has(t.type)) return CONTROL_KEYS.has(e.key);
+  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
 }
 
 window.addEventListener('keydown', (e) => {

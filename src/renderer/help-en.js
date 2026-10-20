@@ -81,6 +81,14 @@ export const HELP_EN = {
       <li><b>Also erase notes and images:</b> when off, the eraser only touches lines and shapes; when on, it also erases notes, text and images. Off by default so you don't erase an image by accident.</li>
     </ul>
 
+    <h3>Paint bucket <kbd>Z</kbd></h3>
+    <p>Click inside a closed area to paint it with the color picked in the panel. It works on shapes such as rectangles, ellipses and polygons, on an irregular shape you drew by hand with the pen, and on an area enclosed by several lines together. Small gaps of a few pixels in the outline count as closed; an area that is open to the outside is not painted. Closed holes inside the area (e.g. the middle of a ring) stay empty.</p>
+    <ul>
+      <li>If the area is the whole inside of a shape, the shape's own fill changes; the paint moves with the shape.</li>
+      <li>Otherwise a separate fill in the area's outline is added. It sits under the lines; you can select it, move it, change its color or delete it.</li>
+      <li>Clicking a painted area again with another color changes its color.</li>
+    </ul>
+
     <h3>Ruler <kbd>6</kbd> / <kbd>R</kbd></h3>
     <p>Places a semi-transparent ruler on the screen; press again to remove it. The ruler is not saved to the board; it is only a drawing aid.</p>
     <ul>

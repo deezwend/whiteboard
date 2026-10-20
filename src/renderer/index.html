@@ -46,6 +46,9 @@
     <button class="tool" data-tool="eraser" title="Silgi">
       <svg viewBox="0 0 24 24"><path d="M7 21h12"/><path d="M5.5 15.5l9-9a2 2 0 012.8 0l2.2 2.2a2 2 0 010 2.8L12 19H8z"/><path d="M9 12l5 5"/></svg>
     </button>
+    <button class="tool" data-tool="bucket" title="Boya kovası — kapalı bir şeklin içine tıklayarak boya">
+      <svg viewBox="0 0 24 24"><path d="M4.5 11.5L11 5l7 7-6.5 6.5a2 2 0 01-2.8 0l-4.2-4.2a2 2 0 010-2.8z"/><path d="M8 3l3 2"/><path d="M4.5 12h13.3"/><path d="M20 15.5c.9 1.3 1.5 2.3 1.5 3a1.5 1.5 0 01-3 0c0-.7.6-1.7 1.5-3z" class="accent"/></svg>
+    </button>
     <button class="tool" data-action="ruler" title="Cetvel — sürükle: taşı, düğme veya tekerlek: döndür, kenarı boyunca kalemle düz çiz">
       <svg viewBox="0 0 24 24"><path d="M3 15.5L15.5 3 21 8.5 8.5 21z"/><path d="M7 11.5l1.8 1.8M9.5 9l2.5 2.5M12 6.5l1.8 1.8M14.5 4l2.5 2.5"/></svg>
     </button>
@@ -144,7 +147,14 @@
     <div class="row" id="hatchRow"></div>
     <div class="row" id="colorRow"></div>
     <div class="row" id="noteColorRow"></div>
-    <div class="row" id="widthRow"></div>
+    <div class="row" id="widthRow">
+      <div class="width-presets"></div>
+      <div class="width-slider">
+        <input type="range" id="widthRange" min="0" max="1000" step="1" title="Kalınlık — sürükleyin, tekerlek ya da ok tuşlarıyla ince ayar yapın" />
+        <span class="width-dot"><span></span></span>
+        <span class="width-val"></span>
+      </div>
+    </div>
     <div class="row" id="fontRow"></div>
     <div class="row" id="textFmtRow">
       <button class="fmt-btn" data-fmt="bold" title="Kalın (Ctrl+B)"><b>B</b></button>
@@ -541,6 +551,14 @@
               <li><b>Bütün çizgi:</b> değdiğin çizgiyi tümüyle siler.</li>
               <li><b>Kısmi:</b> yalnızca silginin geçtiği kısmı siler, çizgi ikiye bölünür.</li>
               <li><b>Not ve resimleri de sil:</b> kapalıyken silgi yalnızca çizgi ve şekillere dokunur; açıkken notları, metinleri ve resimleri de siler. Yanlışlıkla resim silmemek için varsayılan olarak kapalıdır.</li>
+            </ul>
+
+            <h3>Boya kovası <kbd>Z</kbd></h3>
+            <p>Kapalı bir alanın içine tıkla, içi panelde seçtiğin renkle boyansın. Dikdörtgen, elips, çokgen gibi şekiller de olur, kalemle elle çizdiğin düzensiz bir şekil ya da birkaç çizginin birlikte çevrelediği bir alan da. Kenarı birkaç piksellik küçük aralıklar kapalı sayılır; alan dışa açıksa boyanmaz. Alanın içindeki kapalı boşluklar (ör. bir halkanın ortası) boş kalır.</p>
+            <ul>
+              <li>Alan bir şeklin içinin tamamıysa şeklin kendi dolgusu değişir; şekli taşıyınca boya da gelir.</li>
+              <li>Değilse alanın biçiminde ayrı bir dolgu eklenir. Çizgilerin altında durur; seçip taşıyabilir, rengini değiştirebilir ya da silebilirsin.</li>
+              <li>Boyanmış bir alana başka renkle yeniden tıklamak rengini değiştirir.</li>
             </ul>
 
             <h3>Cetvel <kbd>6</kbd> / <kbd>R</kbd></h3>

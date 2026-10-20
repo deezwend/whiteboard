@@ -881,3 +881,37 @@ kbd {
   user-select: text;
 }
 #commentInput:focus, .comment-edit:focus { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-shadow); }
+
+/* Kalınlık kaydırıcısı */
+.width-presets { display: flex; gap: 6px; }
+.width-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 100%;
+  min-width: 180px;
+}
+#widthRange {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--active-fg);
+  cursor: pointer;
+}
+.width-dot {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.width-dot span { display: block; border-radius: 99px; background: var(--text); }
+.width-val {
+  min-width: 46px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  opacity: .75;
+}

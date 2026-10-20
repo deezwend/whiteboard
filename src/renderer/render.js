@@ -181,9 +181,11 @@ function hexToRgba(hex, a) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+// Kovayla boyanan şekiller dolgu rengini fillColor alanında taşır; yoksa kenar rengi kullanılır.
 function fillStyle(el) {
-  if (el.fill === 'soft') return hexToRgba(el.color, 0.18);
-  if (el.fill === 'solid') return el.color;
+  const c = el.fillColor || el.color;
+  if (el.fill === 'soft') return hexToRgba(c, 0.18);
+  if (el.fill === 'solid') return c;
   return null;
 }
 
@@ -599,12 +601,16 @@ export function drawElement(ctx, el, hideText = false) {
       const f = fillStyle(el);
       if (f) {
         ctx.fillStyle = f;
-        ctx.fill();
+        // Kova dolgusunun delikleri köprüyle aynı halkadadır; evenodd ile boş kalırlar.
+        ctx.fill('evenodd');
       }
-      ctx.strokeStyle = el.color;
-      ctx.lineWidth = el.width;
-      ctx.lineJoin = 'round';
-      ctx.stroke();
+      // Kova dolgusunun kenar çizgisi yoktur (kalınlık 0).
+      if (el.width > 0) {
+        ctx.strokeStyle = el.color;
+        ctx.lineWidth = el.width;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+      }
       break;
     }
 
