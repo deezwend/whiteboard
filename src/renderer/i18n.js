@@ -45,6 +45,8 @@ const EN = {
   'Kaydediliyor…': 'Saving…',
   'Kaydedildi': 'Saved',
   'Kaydedilemedi!': 'Could not save!',
+  'Tahta bozuktu; son kayıt denemesinden kurtarıldı': 'The board was corrupted; it was recovered from the last save attempt',
+  'Son tahta açılamadı (dosya bozuk olabilir): {ad}': 'Could not open the last board (the file may be corrupted): {ad}',
   'Kaydetme durumu': 'Save status',
   'Otomatik kaydetme açık': 'Autosave on',
   'Otomatik kaydetme kapalı — Ctrl+S ile kaydet': 'Autosave off — save with Ctrl+S',

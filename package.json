@@ -1,11 +1,12 @@
 {
   "name": "beyaz-tahta",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "description": "Kişisel sonsuz beyaz tahta uygulaması",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.local.beyaztahta",
@@ -33,7 +34,15 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Beyaz Tahta",
       "artifactName": "BeyazTahta-Kurulum-${version}.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "deezwend",
+        "repo": "beyaz-tahta",
+        "releaseType": "release"
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -41,6 +50,7 @@
     "pdfjs-dist": "^4.10.38"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "katex": "^0.16.22",
     "markdown-it": "^14.1.0"
   }

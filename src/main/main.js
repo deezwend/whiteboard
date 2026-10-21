@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const obsidian = require('./obsidian');
 const mdrender = require('./mdrender');
 const i18n = require('./i18n');
+const updater = require('./updater');
 const { L } = i18n;
 
 const FILE_EXT = 'tahta';
@@ -31,11 +32,24 @@ function configuredVault() {
   return s.vault || s.boardsDir || defaultBoardsDir();
 }
 
+// Ayarlı vault bulunamazsa (ör. Drive sürücüsü bağlı değil) varsayılan klasör kullanılır; vault
+// ayarı değiştirilmez. Kullanıcı yeni tahtaların başka klasöre gittiğini bilsin diye oturumda bir kez uyarılır.
+let missingVaultWarned = false;
+
 function boardsDir() {
   const dir = configuredVault();
   if (fs.existsSync(dir)) return dir;
   const def = defaultBoardsDir();
   fs.mkdirSync(def, { recursive: true });
+  if (!missingVaultWarned && win && !samePath(dir, def)) {
+    missingVaultWarned = true;
+    dialog.showMessageBox(win, {
+      type: 'warning',
+      title: L('Vault bulunamadı.'),
+      message: L('Vault klasörü bulunamadı: {yol}', { yol: dir }),
+      detail: L('Sürücü bağlı olmayabilir. Şimdilik tahtalar şu klasöre kaydedilecek: {yol}', { yol: def }),
+    });
+  }
   return def;
 }
 
@@ -88,17 +102,42 @@ function settingsPath() {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
+function parseSettings(file) {
+  const s = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return s && typeof s === 'object' && !Array.isArray(s) ? s : null;
+}
+
+// Ayar dosyası bozulursa son sağlam kopya (settings.json.bak) kullanılır; böylece bir sonraki
+// yazma vault listesini ve diğer ayarları silmez. Bozuk dosya incelenebilsin diye bir kez saklanır.
+let brokenSettingsSaved = false;
+
 function readSettings() {
+  const file = settingsPath();
   try {
-    return JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
+    const s = parseSettings(file);
+    if (s) return s;
+  } catch (err) {
+    if (err.code === 'ENOENT') return {};
+  }
+  if (!brokenSettingsSaved) {
+    brokenSettingsSaved = true;
+    try { fs.copyFileSync(file, path.join(path.dirname(file), 'settings.broken.json')); } catch { /* yoksay */ }
+  }
+  try {
+    return parseSettings(file + '.bak') || {};
   } catch {
     return {};
   }
 }
 
 function writeSettings(patch) {
+  const file = settingsPath();
   const next = { ...readSettings(), ...patch };
-  fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2));
+  // Mevcut dosya sağlamsa yedeklenir; bozuksa eski yedek korunur.
+  try {
+    if (parseSettings(file)) fs.copyFileSync(file, file + '.bak');
+  } catch { /* dosya yok ya da bozuk */ }
+  writeFileAtomic(file, JSON.stringify(next, null, 2));
 }
 
 function timeStamp() {
@@ -149,7 +188,9 @@ function changedOnDisk(filePath) {
   try {
     st = fs.statSync(filePath);
   } catch {
-    return false; // dosya silinmişse yeniden oluşturulur
+    // Bildiğimiz dosya kaybolmuş (başka cihazda silinmiş / taşınmış ya da senkron aracı o an
+    // değiştiriyor): üzerine yazmak yerine çakışma kopyası olarak kaydedilir.
+    return true;
   }
   if (st.mtimeMs === known.mtimeMs) return false;
   try {
@@ -170,8 +211,9 @@ function sleepSync(ms) {
 
 // Yarım kalmış yazmada dosyanın bozulmaması için önce geçici dosyaya yazıp sonra taşıyoruz.
 // Google Drive / OneDrive dosyayı yüklerken kısa süre kilitleyebilir; taşıma birkaç kez denenir,
-// olmazsa doğrudan yazılır.
-function writeBoard(filePath, data) {
+// olmazsa doğrudan yazılır. Doğrudan yazma yarıda kalırsa tam içerik .tmp dosyasında durur
+// (açılırken asıl dosya bozuksa oradan kurtarılır: recoverBoard).
+function writeFileAtomic(filePath, data) {
   const tmp = filePath + '.tmp';
   fs.writeFileSync(tmp, data);
   for (let i = 0; i < 6; i++) {
@@ -185,6 +227,29 @@ function writeBoard(filePath, data) {
   }
   fs.writeFileSync(filePath, data);
   try { fs.unlinkSync(tmp); } catch { /* yoksay */ }
+}
+
+function writeBoard(filePath, data) {
+  writeFileAtomic(filePath, data);
+}
+
+function recoveryDir() {
+  const dir = path.join(app.getPath('userData'), 'recovery');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Asıl dosya okunamıyorsa yarıda kalmış kaydın .tmp dosyasından kurtarmayı dener. Bozuk dosya
+// silinmez, kurtarma klasörüne kopyalanır; tahta asıl yoluyla açılır, ilk kayıtta düzelir.
+function recoverBoard(p) {
+  const f = loadFile(p + '.tmp');
+  if (!f) return null;
+  try {
+    fs.copyFileSync(p, path.join(recoveryDir(), `${path.basename(p, '.' + FILE_EXT)} (${L('bozuk')} ${timeStamp()}).${FILE_EXT}`));
+  } catch { /* yoksay */ }
+  setCurrentPath(p);
+  known = null; // bozuk dosya çakışma sayılmasın, üzerine yazılsın
+  return { path: p, data: f.data, recovered: true };
 }
 
 // Kaydetmeden önce dosya başka cihazda değişmişse üzerine yazmayız: bizim sürüm ayrı bir
@@ -223,7 +288,7 @@ function currentMoved(from, to) {
 
 function openBoardFile(p) {
   const f = loadFile(p);
-  if (!f) return null;
+  if (!f) return recoverBoard(p);
   setCurrentPath(p);
   remember(p, f.text);
   return { path: p, data: f.data };
@@ -276,26 +341,52 @@ function listBoardFiles(dir) {
 ipcMain.handle('board:loadInitial', () => {
   const argFile = fileFromArgv(process.argv);
   const candidates = [argFile, readSettings().lastPath];
+  let loadError = null;
   for (const p of candidates) {
     if (p && fs.existsSync(p)) {
       const res = openBoardFile(p);
       // fromArgv: dosyaya çift tıklanarak açıldı; aksi halde renderer galeriyi gösterir.
       if (res) return { ...res, fromArgv: p === argFile };
+      // Bozuk dosyaya dokunulmaz; kullanıcıya bildirilir, yeni boş tahta açılır.
+      if (!loadError) loadError = path.basename(p, '.' + FILE_EXT);
     }
   }
   setCurrentPath(newBoardPath());
   known = null;
-  return { path: currentPath, data: null };
+  return { path: currentPath, data: null, loadError };
 });
 
 ipcMain.handle('board:save', (_e, json) => saveCurrent(json));
 
+// Pencere kapanırken kaydeder. Kaydedilemezse içerik kurtarma klasörüne yazılır ve kullanıcıya
+// sorulur; true dönerse pencere kapanır.
 ipcMain.on('board:saveSync', (e, json) => {
   try {
     if (currentPath) saveCurrent(json);
     e.returnValue = true;
-  } catch {
-    e.returnValue = false;
+    return;
+  } catch (err) {
+    let copy = null;
+    try {
+      const base = currentPath ? path.basename(currentPath, '.' + FILE_EXT) : L('Tahta');
+      copy = path.join(recoveryDir(), `${base} ${timeStamp()}.${FILE_EXT}`);
+      fs.writeFileSync(copy, json);
+    } catch {
+      copy = null;
+    }
+    const r = dialog.showMessageBoxSync(win, {
+      type: 'error',
+      buttons: [L('Yine de kapat'), L('Vazgeç')],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: L('Kaydedilemedi'),
+      message: L('Tahta kaydedilemedi: {hata}', { hata: err.message }),
+      detail: copy
+        ? L('Değişikliklerin bir kopyası şuraya kaydedildi: {yol}', { yol: copy })
+        : L('Değişikliklerin kopyası da alınamadı. Kapatırsan kaydedilmemiş değişiklikler kaybolur.'),
+    });
+    e.returnValue = r === 0;
   }
 });
 
@@ -321,7 +412,12 @@ ipcMain.handle('board:saveAs', async (_e, json) => {
     filters: BOARD_FILTERS,
   });
   if (res.canceled || !res.filePath) return null;
-  writeBoard(res.filePath, json);
+  try {
+    writeBoard(res.filePath, json);
+  } catch (err) {
+    dialog.showErrorBox(L('Kaydedilemedi'), err.message);
+    return null;
+  }
   setCurrentPath(res.filePath);
   remember(res.filePath, json);
   return res.filePath;
@@ -402,8 +498,12 @@ ipcMain.handle('boards:rename', (_e, p, newName) => {
   if (!name) return { error: L('Geçerli bir ad yaz.') };
   const target = path.join(path.dirname(p), `${name}.${FILE_EXT}`);
   if (target === p) return { path: p };
-  if (fs.existsSync(target) && !samePath(target, p)) return { error: 'Bu adda bir tahta zaten var.' };
-  fs.renameSync(p, target);
+  if (fs.existsSync(target) && !samePath(target, p)) return { error: L('Bu adda bir tahta zaten var.') };
+  try {
+    fs.renameSync(p, target);
+  } catch (err) {
+    return { error: L('Yeniden adlandırılamadı: {hata}', { hata: err.message }) };
+  }
   currentMoved(p, target);
   return { path: target };
 });
@@ -424,7 +524,11 @@ ipcMain.handle('boards:delete', async (_e, p) => {
       detail: L('Kalıcı olarak silinsin mi? Google Drive klasöründeyse Drive kendi çöp kutusunda bir süre saklar.'),
     });
     if (r.response !== 0) return { deleted: false };
-    fs.unlinkSync(p);
+    try {
+      fs.unlinkSync(p);
+    } catch (err) {
+      return { deleted: false, error: L('Silinemedi: {hata}', { hata: err.message }) };
+    }
   }
   const wasCurrent = !!currentPath && samePath(currentPath, p);
   if (wasCurrent) {
@@ -804,6 +908,16 @@ ipcMain.handle('lang:set', (_e, l) => {
   return next;
 });
 
+// ---------- Güncelleme ----------
+
+// Kayıtlı bir tercih yoksa otomatik denetim açıktır.
+function autoUpdateEnabled() {
+  return readSettings().autoUpdate !== false;
+}
+
+// Renderer tahtayı kaydettikten (ya da kullanıcı "Kaydetme" dedikten) sonra çağırır.
+ipcMain.on('update:install', () => updater.install());
+
 // ---------- Menü ----------
 
 function send(cmd) {
@@ -856,7 +970,18 @@ function buildMenu() {
     },
     {
       label: L('Yardım'),
-      submenu: [{ label: L('Rehber ve kısayollar'), accelerator: 'F1', click: () => send('help') }],
+      submenu: [
+        { label: L('Rehber ve kısayollar'), accelerator: 'F1', click: () => send('help') },
+        { type: 'separator' },
+        { label: L('Güncellemeleri denetle…'), click: () => updater.check(true) },
+        {
+          label: L('Güncellemeleri otomatik denetle'),
+          type: 'checkbox',
+          checked: autoUpdateEnabled(),
+          click: (item) => writeSettings({ autoUpdate: item.checked }),
+        },
+        { label: L('Sürüm {surum}', { surum: app.getVersion() }), enabled: false },
+      ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -904,6 +1029,7 @@ if (!app.requestSingleInstanceLock()) {
     initLang();
     buildMenu();
     createWindow();
+    updater.init({ getWin: () => win, send, isEnabled: autoUpdateEnabled });
   });
 }
 

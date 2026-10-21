@@ -446,24 +446,28 @@ async function leaveBoard() {
   return !dirty; // kaydedilemediyse geçme
 }
 
+// Kaydedildiyse (ya da kaydedilecek bir şey yoksa) true döner.
 async function saveNow() {
   clearTimeout(saveTimer);
-  if (!dirty) return;
+  if (!dirty) return true;
   dirty = false;
   try {
     const res = await api.save(serialize());
     if (!dirty) setSaveState(t('Kaydedildi'));
     if (res?.conflict) toast(t('Tahta başka bir cihazda değişmiş; senin sürümün ayrı bir kopya olarak kaydedildi'));
+    return true;
   } catch {
     dirty = true;
     setSaveState(t('Kaydedilemedi!'));
+    return false;
   }
 }
 
-// Dil değiştirmek için sayfa yeniden yüklenirken (setLanguage) kaydetme sorusu tekrarlanmaz.
-let reloadingForLang = false;
+// Dil değiştirmek için sayfa yeniden yüklenirken (setLanguage) ya da güncelleme kurulurken
+// (installUpdate) tahta zaten kaydedildiği için kaydetme sorusu tekrarlanmaz.
+let leavingPage = false;
 window.addEventListener('beforeunload', (e) => {
-  if (reloadingForLang) return; // leaveBoard kaydetti ya da kullanıcı "Kaydetme" dedi
+  if (leavingPage) return; // leaveBoard kaydetti ya da kullanıcı "Kaydetme" dedi
   commitEditor();
   if (!dirty) return;
   if (!autoSave) {
@@ -475,7 +479,12 @@ window.addEventListener('beforeunload', (e) => {
       return;
     }
   }
-  api.saveSync(serialize());
+  // Kaydedilemezse ana süreç kurtarma kopyası alıp sorar; "Vazgeç" denirse pencere açık kalır.
+  if (!api.saveSync(serialize())) {
+    e.preventDefault();
+    e.returnValue = false;
+    setSaveState(t('Kaydedilemedi!'));
+  }
 });
 
 function changed(save = true) {
@@ -1181,7 +1190,7 @@ let viewTimer = null;
 function scheduleViewSave() {
   clearTimeout(viewTimer);
   viewTimer = setTimeout(() => {
-    if (!dirty) api.save(serialize()).catch(() => {});
+    if (!dirty) api.save(serialize()).catch((err) => console.warn('Görünüm kaydedilemedi', err));
   }, 1000);
 }
 
@@ -4416,8 +4425,16 @@ async function setLanguage(next) {
   // Vazgeçilirse yerel menüdeki seçim de eski dile döner.
   if (!(await leaveBoard())) return api.setLang(lang);
   await api.setLang(next);
-  reloadingForLang = true;
+  leavingPage = true;
   location.reload();
+}
+
+// Güncelleme kurulmadan önce tahta kaydedilir; kullanıcı vazgeçerse kurulmaz (kapanırken kurulur).
+async function installUpdate() {
+  commitEditor();
+  if (!(await leaveBoard())) return;
+  leavingPage = true;
+  api.installUpdate();
 }
 
 // Özel arka plan rengi: sürüklerken canlı önizleme, bırakınca kaydet
@@ -4462,17 +4479,22 @@ async function handleCommand(cmd) {
       const res = await api.open();
       if (res) {
         loadBoard(res.data);
-        toast(t('Tahta açıldı'));
+        toast(res.recovered ? t('Tahta bozuktu; son kayıt denemesinden kurtarıldı') : t('Tahta açıldı'), res.recovered ? 6000 : undefined);
       }
       break;
     }
     case 'save':
       dirty = true;
-      await saveNow();
-      toast(t('Kaydedildi'));
+      if (await saveNow()) toast(t('Kaydedildi'));
+      else toast(t('Kaydedilemedi!'));
       break;
     case 'saveAs': {
-      const p = await api.saveAs(serialize());
+      let p = null;
+      try {
+        p = await api.saveAs(serialize());
+      } catch {
+        toast(t('Kaydedilemedi!'));
+      }
       if (p) {
         dirty = false;
         setSaveState(t('Kaydedildi'));
@@ -4513,6 +4535,8 @@ async function handleCommand(cmd) {
       return helpOpen() ? closeHelp() : openHelp();
     case 'obsidianRefreshAll':
       return refreshObsidian(board.elements);
+    case 'installUpdate':
+      return installUpdate();
     case 'lang:tr':
     case 'lang:en':
       return setLanguage(cmd.slice(5));
@@ -4529,7 +4553,7 @@ async function openBoardPath(p) {
   if (res) {
     loadBoard(res.data);
     closeGallery();
-    toast(t('Tahta açıldı'));
+    toast(res.recovered ? t('Tahta bozuktu; son kayıt denemesinden kurtarıldı') : t('Tahta açıldı'), res.recovered ? 6000 : undefined);
   }
 }
 api.onOpenPath(openBoardPath);
@@ -4909,6 +4933,7 @@ async function deleteFromGallery(card) {
     zoomFit();
   }
   if (res.deleted) toast(t('Tahta silindi'));
+  else if (res.error) toast(res.error);
   refreshGallery();
 }
 
@@ -5721,6 +5746,8 @@ async function init() {
   // Uygulama "Tahtalarım" ile açılır; son tahta arkada yüklü kalır (Esc onu gösterir).
   // Bir .tahta dosyasına çift tıklanarak açıldıysa doğrudan o tahta gösterilir.
   if (!res.fromArgv) openGallery();
+  if (res.loadError) toast(t('Son tahta açılamadı (dosya bozuk olabilir): {ad}', { ad: res.loadError }), 6000);
+  else if (res.recovered) toast(t('Tahta bozuktu; son kayıt denemesinden kurtarıldı'), 6000);
 }
 
 init();

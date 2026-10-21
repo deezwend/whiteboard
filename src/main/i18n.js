@@ -77,6 +77,40 @@ const EN = {
   'Geçersiz adres.': 'Invalid address.',
   'Dosya çok büyük.': 'The file is too large.',
   'Adres bir resim değil.': 'The address is not an image.',
+  'Bu adda bir tahta zaten var.': 'A board with this name already exists.',
+  'Yeniden adlandırılamadı: {hata}': 'Could not rename: {hata}',
+  'Silinemedi: {hata}': 'Could not delete: {hata}',
+  // Veri kaybına karşı uyarılar
+  'Vault klasörü bulunamadı: {yol}': 'Vault folder not found: {yol}',
+  'Sürücü bağlı olmayabilir. Şimdilik tahtalar şu klasöre kaydedilecek: {yol}':
+    'The drive may not be connected. For now, boards will be saved to: {yol}',
+  'Kaydedilemedi': 'Could not save',
+  'Yine de kapat': 'Close anyway',
+  'Tahta kaydedilemedi: {hata}': 'The board could not be saved: {hata}',
+  'Değişikliklerin bir kopyası şuraya kaydedildi: {yol}': 'A copy of your changes was saved to: {yol}',
+  'Değişikliklerin kopyası da alınamadı. Kapatırsan kaydedilmemiş değişiklikler kaybolur.':
+    'A copy of your changes could not be saved either. If you close, unsaved changes will be lost.',
+  'bozuk': 'corrupted',
+  // Güncelleme
+  'Güncellemeleri denetle…': 'Check for updates…',
+  'Güncellemeleri otomatik denetle': 'Check for updates automatically',
+  'Sürüm {surum}': 'Version {surum}',
+  'Güncelleme': 'Update',
+  'Güncelleme hazır': 'Update ready',
+  'Beyaz Tahta {surum} indirildi.': 'Whiteboard {surum} has been downloaded.',
+  'Şimdi yeniden başlatılabilir. "Sonra" dersen uygulamayı kapattığında kurulur.':
+    'You can restart now. If you choose "Later", it will be installed when you close the app.',
+  'Yeniden başlat ve kur': 'Restart and install',
+  'Sonra': 'Later',
+  'Güncelleme bulundu': 'Update found',
+  'Beyaz Tahta {surum} bulundu.': 'Whiteboard {surum} is available.',
+  'Arka planda indiriliyor; hazır olunca haber verilecek.': "Downloading in the background; you'll be notified when it's ready.",
+  'Güncelleme yok': 'No updates',
+  'Beyaz Tahta güncel.': 'Whiteboard is up to date.',
+  'Güncelleme denetlenemedi': 'Could not check for updates',
+  'Güncelleme denetlenemedi.': 'Could not check for updates.',
+  'Geliştirme modunda güncelleme denetlenmez.': 'Updates are not checked in development mode.',
+  'Güncelleme zaten denetleniyor ya da indiriliyor.': 'An update is already being checked or downloaded.',
 };
 
 function setLang(l) {

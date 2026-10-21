@@ -38,5 +38,6 @@ contextBridge.exposeInMainWorld('api', {
   setTheme: (mode) => ipcRenderer.invoke('theme:set', mode),
   lang: ipcRenderer.sendSync('lang:get'),
   setLang: (l) => ipcRenderer.invoke('lang:set', l),
+  installUpdate: () => ipcRenderer.send('update:install'),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
 });

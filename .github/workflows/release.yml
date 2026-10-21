@@ -1,0 +1,37 @@
+# v* etiketi push edilince Windows kurulumunu derler ve GitHub Release'e yükler.
+# Yüklenen latest.yml ve .blockmap dosyaları, kurulu uygulamadaki otomatik güncellemenin kaynağıdır.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Etiket ile package.json sürümü aynı mı
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "Etiket $GITHUB_REF_NAME, package.json sürümü $v ile uyuşmuyor." >&2
+            exit 1
+          fi
+
+      - name: Derle ve yayınla
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
