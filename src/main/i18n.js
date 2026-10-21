@@ -77,6 +77,8 @@ const EN = {
   'Geçersiz adres.': 'Invalid address.',
   'Dosya çok büyük.': 'The file is too large.',
   'Adres bir resim değil.': 'The address is not an image.',
+  'Geçersiz alan.': 'Invalid area.',
+  'Ekran görüntüsü alınamadı.': 'Could not take a snapshot.',
   'Bu adda bir tahta zaten var.': 'A board with this name already exists.',
   'Yeniden adlandırılamadı: {hata}': 'Could not rename: {hata}',
   'Silinemedi: {hata}': 'Could not delete: {hata}',

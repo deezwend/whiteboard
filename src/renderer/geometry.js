@@ -70,7 +70,7 @@ export function bbox(el) {
 // açıyı `rot` (radyan) alanında taşır. Koordinat sistemi döndürülmez.
 
 export function canRotate(el) {
-  return el.type !== 'axes' && el.type !== 'table';
+  return el.type !== 'axes' && el.type !== 'table' && el.type !== 'embed';
 }
 
 export function rotatePoint(x, y, cx, cy, a) {

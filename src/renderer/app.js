@@ -13,6 +13,7 @@ import { createRuler, rulerHit, nearEdge, projectOnEdge, snapAngle, drawRuler } 
 import { createProtractor, protractorHit, nearArc, setArm, drawProtractor, PROT_R } from './protractor.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
 import { openObsidianPicker } from './obsidian-picker.js';
+import { embedFor, createLiveEmbed } from './embed.js';
 import { t, lang, locale } from './i18n.js';
 
 const api = window.api;
@@ -20,6 +21,11 @@ const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const editor = document.getElementById('editor');
 const $ = (s) => document.querySelector(s);
+// Canlı açık gömülü sayfa (aynı anda en fazla bir tane); bkz. "Gömülü sayfalar".
+const embedLive = createLiveEmbed($('#embedLayer'), {
+  onDone: () => closeEmbed(),
+  onOpenExternal: (url) => api.openLink(url),
+});
 
 // ---------- Sabitler ----------
 
@@ -503,6 +509,7 @@ function loadBoard(data) {
   delete board.thumb; // her kayıtta yeniden üretilir
   board.view = { ...base.view, ...(data?.view || {}) };
   if (!Array.isArray(board.elements)) board.elements = [];
+  embedLive.close();
   undoStack.length = 0;
   redoStack.length = 0;
   selection.clear();
@@ -632,6 +639,7 @@ function render() {
   drawOverlay();
   if (editing) positionEditor();
   updateCommentPins();
+  positionLiveEmbed();
   positionCommentPop();
   $('#zoomLabel').textContent = Math.round(board.view.zoom * 100) + '%';
 }
@@ -1078,7 +1086,7 @@ function setAllCovers(show) {
 // kendi dolgusu, daha önce kovayla boyanmış aynı alansa o dolgunun rengi değişir; değilse alanın
 // biçiminde kenarsız bir dolgu çokgeni (bucket) eklenir: sınır çizgilerinin ve yazıların altına,
 // altında kalan resim / not / dolgulu şekillerin üstüne.
-const FILL_UNDER = ['image', 'note', 'table'];
+const FILL_UNDER = ['image', 'note', 'table', 'embed'];
 const FILL_OVER = ['text', 'sticker', 'link', 'axes'];
 
 function bucketFill(w) {
@@ -1208,6 +1216,7 @@ function toast(msg, ms = 2200) {
 canvas.addEventListener('pointerdown', (e) => {
   hideMenu();
   closeComments();
+  if (embedLive.id) closeEmbed(); // canlı embed'in dışına basınca etkileşimden çıkılır
   if (editing) commitEditor();
   pointer = { x: e.clientX, y: e.clientY };
 
@@ -1460,7 +1469,7 @@ function startSelectDrag(e, w) {
     const opposite = { nw: 'se', ne: 'sw', sw: 'ne', se: 'nw' };
     // Dönmüş kutu öğeleri yalnızca orantılı büyür; serbest boyutlandırma onları çarpıtırdı.
     const keepRatio = sel.some((el) => el.rot);
-    const freeform = sel.length === 1 && ['rect', 'ellipse', 'polygon', 'note', 'table', 'link'].includes(sel[0].type) && !keepRatio;
+    const freeform = sel.length === 1 && ['rect', 'ellipse', 'polygon', 'note', 'table', 'link', 'embed'].includes(sel[0].type) && !keepRatio;
     drag = { kind: 'resize', anchor: corners[opposite[handle]], corner: corners[handle], originals, freeform, keepRatio, moved: false };
     return;
   }
@@ -1898,6 +1907,7 @@ canvas.addEventListener('dblclick', (e) => {
   else if (hit && (hit.type === 'text' || hit.type === 'note')) openEditor(hit, false);
   else if (hit?.type === 'table') openEditor(hit, false, cellAt(hit, w));
   else if (hit?.type === 'link') openLinkEl(hit);
+  else if (hit?.type === 'embed') openEmbed(hit);
   else if (hit?.obsidian) openInObsidian(hit);
   else if (hit?.type === 'image') {
     selection = new Set([hit.id]);
@@ -2303,6 +2313,7 @@ function ownText(el) {
   if (el.type === 'text' || el.type === 'note') return el.text;
   if (el.type === 'table') return el.cells.map((row) => row.join('\t')).join('\n');
   if (el.type === 'link') return [el.title, el.desc, el.url].filter(Boolean).join('\n');
+  if (el.type === 'embed') return [el.title, el.url].filter(Boolean).join('\n');
   if (el.obsidian) return el.obsidian.title || '';
   if (el.type === 'axes') return (el.fns || []).map((f) => f.expr).join(' ');
   return '';
@@ -2747,7 +2758,7 @@ function eraseAlong(a, b) {
   const { mode, all } = styles.eraser;
   // Kilitli nesneler silgiden etkilenmez; not, resim, bant ve koordinat sistemi yalnızca "hepsini sil" açıkken silinir.
   const hits = board.elements.filter((el) => !el.locked &&
-    (all || !['note', 'image', 'cover', 'axes', 'table', 'sticker', 'link'].includes(el.type)) && samples.some((p) => hitTest(el, p.x, p.y, r)));
+    (all || !['note', 'image', 'cover', 'axes', 'table', 'sticker', 'link', 'embed'].includes(el.type)) && samples.some((p) => hitTest(el, p.x, p.y, r)));
   if (!hits.length) return;
   if (!drag.checkpointed) {
     checkpoint();
@@ -3097,6 +3108,7 @@ function propsContext() {
       ctx.values.emoji = sel[0].emoji;
     }
     ctx.link = sel.length === 1 && sel[0].type === 'link';
+    ctx.embed = sel.length === 1 && sel[0].type === 'embed';
     // Hizalama ve gruplama birimleri: her grup bir birim sayılır.
     const units = unitsOf(sel.filter((el) => !el.locked)).length;
     ctx.align = units >= 2 ? units : 0;
@@ -3256,6 +3268,7 @@ function updateProps() {
     ).join('');
   }
   $('#linkRow').classList.toggle('hidden', !c.link);
+  $('#embedRow').classList.toggle('hidden', !c.embed);
   $('#alignRow').classList.toggle('hidden', !c.align);
   document.querySelectorAll('[data-align-op^="dist"]').forEach((b) => b.classList.toggle('hidden', c.align < 3));
 
@@ -3347,7 +3360,7 @@ function applyStyle(prop, value, keepUndo = false) {
   if (selectionIsEditable()) {
     if (!keepUndo) checkpoint();
     for (const el of selectedEls()) {
-      if (prop === 'color' && !['note', 'image', 'sticker', 'link'].includes(el.type)) el.color = value;
+      if (prop === 'color' && !['note', 'image', 'sticker', 'link', 'embed'].includes(el.type)) el.color = value;
       if (prop === 'noteColor' && el.type === 'note') el.color = value;
       if (prop === 'width' && ['stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.width = value;
       if (prop === 'fill' && ['rect', 'ellipse', 'polygon'].includes(el.type) && !el.bucket) el.fill = value;
@@ -3443,6 +3456,10 @@ $('#props').addEventListener('click', (e) => {
   else if (b.dataset.emoji) applyStyle('emoji', b.dataset.emoji);
   else if (b.dataset.link === 'open') openLinkEl(selectedEls()[0]);
   else if (b.dataset.link === 'refresh') fetchLinkInfo(selectedEls()[0], true);
+  else if (b.dataset.link === 'embed') linkToEmbed(selectedEls()[0]);
+  else if (b.dataset.embed === 'open') openEmbed(selectedEls()[0]);
+  else if (b.dataset.embed === 'browser') openLinkEl(selectedEls()[0]);
+  else if (b.dataset.embed === 'toLink') embedToLink(selectedEls()[0]);
   else if (b.dataset.crop === 'start') startCrop();
   else if (b.dataset.crop === 'apply') applyCrop();
   else if (b.dataset.crop === 'cancel') cancelCrop();
@@ -3925,6 +3942,7 @@ function runAction(a) {
     case 'table': return insertTable();
     case 'template': return openTemplates();
     case 'link': return insertLink();
+    case 'embed': return insertEmbed();
     case 'webImage': return searchWebImages();
   }
 }
@@ -4134,8 +4152,127 @@ async function fetchLinkInfo(el, manual = false) {
 }
 
 async function openLinkEl(el) {
-  if (el?.type !== 'link') return;
+  if (el?.type !== 'link' && el?.type !== 'embed') return;
   if (!(await api.openLink(el.url))) toast(t('Bağlantı açılamadı'));
+}
+
+// ---------- Gömülü sayfalar (embed) ----------
+// Desmos, GeoGebra, YouTube gibi sayfalar tahtada son ekran görüntüleriyle çizilir; çift tıklayınca
+// aynı yerde canlı açılır (embed.js). Canlı sayfadan çıkarken görünen hâli yeni ekran görüntüsü olur.
+// Ekran görüntüsü geri alma adımı oluşturmaz.
+
+// Yapıştırılan / sürüklenen adres: bilinen gömülebilir siteyse embed, değilse bağlantı kartı.
+function addUrl(url, at) {
+  return embedFor(url)?.known ? addEmbed(url, at) : addLinkCard(url, at);
+}
+
+async function insertEmbed() {
+  commitEditor();
+  const input = await askText({
+    title: t('Web sayfası göm'),
+    placeholder: 'https://…',
+    hint: t('Desmos, GeoGebra, YouTube, Figma, Google Dokümanlar… Sayfa tahtada canlı açılır.'),
+    ok: t('Ekle'),
+  });
+  if (input === null) return;
+  const url = normalizeUrl(input);
+  if (!url) return toast(t('Geçerli bir web adresi yaz'));
+  addEmbed(url, toWorld(innerWidth / 2, innerHeight / 2));
+}
+
+// Bilinmeyen site önce denetlenir: iframe içinde gösterilmeyi yasaklıyorsa bağlantı kartı eklenir.
+// replace verilirse (bağlantı kartını embed'e çevirme) o öğenin yerine konur.
+async function addEmbed(url, at, replace = null) {
+  const info = embedFor(url);
+  if (!info) return replace ? toast(t('Bu adres gömülemiyor')) : addLinkCard(url, at);
+  let title = replace?.title || '';
+  if (!info.known) {
+    toast(t('Sayfa denetleniyor…'));
+    const r = await api.embedCheck(info.src);
+    if (r?.blocked) {
+      if (replace) return toast(t('Bu site tahtaya gömülmeye izin vermiyor'), 4000);
+      toast(t('Bu site tahtaya gömülmeye izin vermiyor; bağlantı kartı eklendi'), 4000);
+      return addLinkCard(url, at);
+    }
+    title ||= r?.title || '';
+  }
+  if (replace && !board.elements.includes(replace)) return;
+  // Ekranda sitenin önerdiği boyutta görünür; pencere küçükse sığacak kadar küçülür.
+  const s = Math.min(1, (innerWidth * 0.8) / info.size.w, (innerHeight * 0.75) / info.size.h) / board.view.zoom;
+  const w = info.size.w * s, h = info.size.h * s;
+  const el = { id: newId(), type: 'embed', x: at.x - w / 2, y: at.y - h / 2, w, h, url, src: info.src, provider: info.provider, title };
+  checkpoint();
+  if (replace) board.elements.splice(board.elements.indexOf(replace), 1, el);
+  else board.elements.push(el);
+  setTool('select');
+  selection = new Set([el.id]);
+  changed();
+  if (!title) fetchEmbedTitle(el);
+  openEmbed(el);
+}
+
+async function fetchEmbedTitle(el) {
+  const { id, url } = el;
+  const r = await api.linkInfo(url);
+  const cur = board.elements.find((e) => e.id === id);
+  if (!cur || cur.url !== url || r?.error || !r?.title) return;
+  cur.title = r.title;
+  sceneCacheValid = false;
+  requestRender();
+  scheduleSave();
+}
+
+function openEmbed(el) {
+  if (el?.type !== 'embed' || embedLive.id === el.id) return;
+  if (embedLive.id) closeEmbed();
+  commitEditor();
+  embedLive.open(el);
+  selection = new Set([el.id]);
+  updateProps();
+  requestRender();
+}
+
+// Canlı sayfadan çıkar; tamamı ekrandaysa görünen hâli öğenin yeni ekran görüntüsü olur.
+async function closeEmbed(capture = true) {
+  const id = embedLive.id;
+  if (!id) return;
+  const r = capture ? embedLive.visibleRect() : null;
+  const shot = r ? await api.embedCapture(r) : null;
+  // Beklerken başka bir embed açılmış olabilir; o zaman bu sayfa zaten kapanmıştır.
+  if (embedLive.id === id) embedLive.close();
+  const el = board.elements.find((e) => e.id === id);
+  if (!el || !shot?.src) return;
+  el.thumb = shot.src;
+  sceneCacheValid = false;
+  requestRender();
+  scheduleSave();
+}
+
+// Her çizimde canlı sayfayı öğenin ekrandaki yerine taşır; öğe silinmiş ya da geri alınmışsa kapatır.
+function positionLiveEmbed() {
+  const id = embedLive.id;
+  if (!id) return;
+  const el = board.elements.find((e) => e.id === id);
+  if (el?.type !== 'embed') return embedLive.close();
+  embedLive.position(screenRect(bbox(el)));
+}
+
+function linkToEmbed(el) {
+  if (el?.type !== 'link') return;
+  addEmbed(el.url, { x: el.x + el.w / 2, y: el.y + el.h / 2 }, el);
+}
+
+function embedToLink(el) {
+  if (el?.type !== 'embed') return;
+  if (embedLive.id === el.id) embedLive.close();
+  const z = board.view.zoom;
+  const w = LINK_SIZE.w / z, h = LINK_SIZE.h / z;
+  const link = { id: newId(), type: 'link', x: el.x + el.w / 2 - w / 2, y: el.y + el.h / 2 - h / 2, w, h, url: el.url, title: el.title || '' };
+  checkpoint();
+  board.elements.splice(board.elements.indexOf(el), 1, link);
+  selection = new Set([link.id]);
+  changed();
+  fetchLinkInfo(link);
 }
 
 // Bing Görseller'de arar; bulunan resim tarayıcıdan sürüklenir ya da kopyalanıp yapıştırılır.
@@ -4693,10 +4830,53 @@ $('#helpResetKeys').addEventListener('click', () => {
   toast(t('Kısayollar varsayılana döndürüldü'));
 });
 
+// ---------- Rehber: güncellemeleri denetle sekmesi ----------
+// Menüdeki güncelleme ayarlarının aynısı. Denetim buradan sessiz yapılır: menüdeki gibi pencere
+// açılmaz, sonuç sekmedeki durum satırına yazılır (indirme bitince kurulum sorusu yine açılır).
+const helpAutoUpdate = $('#helpAutoUpdate');
+const helpCheckUpdate = $('#helpCheckUpdate');
+const helpUpdateState = $('#helpUpdateState');
+const helpUpdateVersion = $('#helpUpdateVersion');
+let updateInfo = { version: '', auto: true, packaged: true, state: 'idle' };
+
+function updateStateText(info) {
+  if (!info.packaged) return t('Geliştirme modunda güncelleme denetlenmez.');
+  if (info.state === 'checking') return t('Denetleniyor…');
+  if (info.state === 'downloading') return t('İndiriliyor… %{yuzde}', { yuzde: Math.round(info.percent || 0) });
+  if (info.state === 'ready') return t('Sürüm {surum} indirildi; uygulama yeniden başlatılınca kurulacak.', { surum: info.readyVersion });
+  if (info.result === 'uptodate') return t('Beyaz Tahta güncel.');
+  if (info.result === 'error') return t('Denetlenemedi: {hata}', { hata: info.error || '—' });
+  return '';
+}
+
+function renderUpdateTab(next) {
+  updateInfo = { ...updateInfo, ...next };
+  helpUpdateVersion.textContent = updateInfo.version || '—';
+  helpAutoUpdate.checked = !!updateInfo.auto;
+  helpAutoUpdate.disabled = !updateInfo.packaged;
+  helpCheckUpdate.disabled = !updateInfo.packaged || ['checking', 'downloading'].includes(updateInfo.state);
+  helpUpdateState.textContent = updateStateText(updateInfo);
+}
+
+function refreshUpdateTab() {
+  api.updateInfo().then(renderUpdateTab);
+}
+
+api.onUpdateState((s) => renderUpdateTab(s));
+
+helpAutoUpdate.addEventListener('change', async () => {
+  const on = await api.setAutoUpdate(helpAutoUpdate.checked);
+  updateInfo.auto = on;
+  helpAutoUpdate.checked = on;
+});
+
+helpCheckUpdate.addEventListener('click', () => api.checkUpdates());
+
 function showHelpTab(name) {
   helpTabs.forEach((b) => b.classList.toggle('active', b.dataset.helpTab === name));
   helpSections.forEach((s) => s.classList.toggle('active', s.dataset.helpSection === name));
   $('#helpContent').scrollTop = 0;
+  if (name === 'update') refreshUpdateTab();
   try { localStorage.setItem('helpTab', name); } catch { /* localStorage kapalı olabilir */ }
 }
 
@@ -5534,7 +5714,7 @@ document.addEventListener('drop', (e) => {
   if (img) insertImageUrl(img.replace(/&amp;/g, '&'), at);
   else if (URL_RE.test(uri)) {
     if (IMAGE_URL_RE.test(uri)) insertImageUrl(uri, at);
-    else addLinkCard(uri, at);
+    else addUrl(uri, at);
   }
 });
 
@@ -5577,8 +5757,9 @@ document.addEventListener('paste', (e) => {
   if (files.length) return insertImageFiles(files, at);
 
   const text = dt.getData('text/plain').trim();
-  // Tek başına bir web adresi: resim adresiyse resim, değilse bağlantı kartı.
-  if (URL_RE.test(text)) return IMAGE_URL_RE.test(text) ? insertImageUrl(text, at) : addLinkCard(text, at);
+  // Tek başına bir web adresi: resim adresiyse resim, gömülebilen bilinen bir siteyse (Desmos,
+  // YouTube…) embed, değilse bağlantı kartı.
+  if (URL_RE.test(text)) return IMAGE_URL_RE.test(text) ? insertImageUrl(text, at) : addUrl(text, at);
   if (text) {
     checkpoint();
     const fs = styles.text.fontSize;
@@ -5685,6 +5866,7 @@ window.addEventListener('keydown', (e) => {
     deleteSelection();
   } else if (e.key === 'Escape') {
     if (commentFor) return closeComments();
+    if (embedLive.id) return closeEmbed();
     selection.clear();
     if (activeTool() === 'compass') compass = null;
     closeFlyout();

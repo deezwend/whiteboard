@@ -16,14 +16,14 @@ export const HELP_EN = {
 
     <h3>Screen layout</h3>
     <ul>
-      <li><b>Top center – toolbar:</b> pens, eraser, ruler, shapes, text/note, insert tools, undo / redo.</li>
+      <li><b>Top center – toolbar:</b> Select and Scissors (one button) and Pan; pens; eraser; paint bucket; ruler; protractor (student mode); shapes; compass (student mode); text, note and tape; insert tools; undo / redo.</li>
       <li><b>Top left:</b> the menu button (☰), the <b>My boards</b> gallery and the save status.</li>
       <li><b>Below the toolbar – properties panel:</b> changes with the selected tool or objects; color, thickness, fill, font size, brush type and similar settings live here. The arrow on its bottom edge hides it.</li>
       <li><b>Bottom right:</b> zoom out / in, click the percentage to return to 100%, and the "fit all" button.</li>
     </ul>
 
     <h3>Tool groups</h3>
-    <p>Similar tools (pens, shapes, text/note, insert) are grouped into one button. The button shows <b>the tool you used last</b>. To reach the other tools in the group:</p>
+    <p>Similar tools (select/scissors, pens, shapes, text/note/tape, insert) are grouped into one button. The button shows <b>the tool you used last</b>. To reach the other tools in the group:</p>
     <ul>
       <li><b>click the active button again</b>, or</li>
       <li><b>right-click</b> the button, or</li>
@@ -78,7 +78,7 @@ export const HELP_EN = {
     <ul>
       <li><b>Whole line:</b> erases the entire line you touch.</li>
       <li><b>Partial:</b> erases only where the eraser passes; the line is split in two.</li>
-      <li><b>Also erase notes and images:</b> when off, the eraser only touches lines and shapes; when on, it also erases notes, text and images. Off by default so you don't erase an image by accident.</li>
+      <li><b>Also erase notes and images:</b> when on, the eraser also removes notes, images, cover tapes, coordinate systems, tables, stickers, link cards and embedded web pages. When off, it erases only lines, shapes and text. It is off by default so you don't erase an image by accident.</li>
     </ul>
 
     <h3>Paint bucket <kbd>Z</kbd></h3>
@@ -172,7 +172,7 @@ export const HELP_EN = {
 
     <h3>Searching the board <kbd>Ctrl+F</kbd></h3>
     <ul>
-      <li>A search box opens at the top right. It searches text, sticky notes, the titles of Obsidian sections and the functions in coordinate systems.</li>
+      <li>A search box opens at the top right. It searches text, sticky notes, table cells, link cards (title, description and address), embedded web pages (title and address), the titles of Obsidian sections, the functions in coordinate systems and comments.</li>
       <li>Matches are marked with a yellow frame, and the current one is centered on screen. <kbd>Enter</kbd> next, <kbd>Shift+Enter</kbd> previous; <kbd>Esc</kbd> closes.</li>
       <li>Handwritten (pen-drawn) writing cannot be searched.</li>
     </ul>
@@ -226,7 +226,7 @@ export const HELP_EN = {
     <p>Pick the <b>Sticker</b> tool in the text group (or <kbd>M</kbd>), choose an emoji in the panel (👍 ❤️ ⭐ ✅ 💡 …) and click wherever you like on the board. Every click places a sticker. The emoji of selected stickers can be changed in the panel; they resize and rotate like images. The eraser removes stickers only while "Also erase notes and images" is on.</p>
 
     <h3>Pasting from the clipboard</h3>
-    <p>If you paste <b>plain text</b> copied from elsewhere with <kbd>Ctrl+V</kbd>, it becomes a text object where the cursor is. A copied <b>image</b> (e.g. a screenshot) is inserted as an image. Pasting just a <b>web address</b> makes a link card; if the address points to an image (.png, .jpg…), the image is downloaded and inserted.</p>
+    <p>If you paste <b>plain text</b> copied from elsewhere with <kbd>Ctrl+V</kbd>, it becomes a text object where the cursor is. A copied <b>image</b> (e.g. a screenshot) is inserted as an image. Pasting just a <b>web address</b> makes a link card (addresses from known sites like Desmos or YouTube become embedded pages); if the address points to an image (.png, .jpg…), the image is downloaded and inserted.</p>
   `,
 
   insert: `
@@ -249,7 +249,17 @@ export const HELP_EN = {
     <ul>
       <li>Press <b>Link card</b> in the Insert group (or <kbd>F</kbd>) and enter a web address; or paste the address straight onto the board / drag it from the browser.</li>
       <li>The card shows the page's <b>title</b>, a short <b>description</b> and the domain (the details are read from the internet; without a connection only the address is shown).</li>
-      <li><b>Double-click</b> the card to open the page in your default browser. The panel has <b>Open link</b> and <b>Refresh details</b>.</li>
+      <li><b>Double-click</b> the card to open the page in your default browser. The panel has <b>Open link</b>, <b>Refresh details</b> and <b>Embed</b>.</li>
+    </ul>
+
+    <h3>Embedded web page</h3>
+    <ul>
+      <li>Press <b>Embed web page</b> in the Insert group and enter the address. Addresses from <b>Desmos</b>, <b>GeoGebra</b>, <b>YouTube</b>, <b>Vimeo</b>, <b>Figma</b>, <b>CodePen</b>, <b>Google Docs</b>, <b>Google Maps</b>, <b>Spotify</b> and <b>Loom</b> are embedded directly when pasted or dragged too.</li>
+      <li>The page stays on the board as its <b>last snapshot</b>: you can move it, resize it, draw on it, and it appears in exports. <b>Double-click</b> it to open it live in place; type functions into a graph, play a video and so on.</li>
+      <li>With an embed selected, the panel has <b>Open live</b> (the same as double-clicking), <b>Open in browser</b> (opens the page in your default browser) and <b>Turn into link card</b>.</li>
+      <li>While the page is live, a bar above it shows its title and buttons to reload the page, open it in the browser, and <b>Done</b>. <b>Done</b>, clicking an empty spot on the board or <kbd>Esc</kbd> leaves the live page. On leaving, what the page shows becomes its new snapshot (if the whole page is on screen).</li>
+      <li>Only one page is live at a time. Sites that don't allow embedding are added as link cards. Without an internet connection only the last snapshot is shown.</li>
+      <li>To keep changes made in Desmos, save the graph in Desmos and embed its share link; the board stores the page address and its last snapshot.</li>
     </ul>
 
     <h3>Templates <kbd>J</kbd></h3>
@@ -415,7 +425,7 @@ export const HELP_EN = {
     <p>Turn off the <b>Convert to shape</b> button in the properties panel while drawing with the pen (any brush type except Arrow and Dashed arrow). After a conversion, <kbd>Ctrl+Z</kbd> brings back the hand drawing.</p>
 
     <h3>The eraser doesn't erase my images and notes</h3>
-    <p><b>Also erase notes and images</b> must be on in the eraser panel. It is off on purpose.</p>
+    <p>Turn on <b>Also erase notes and images</b> in the eraser panel. It is off by default so you don't erase an image by accident; until you turn it on, the eraser leaves notes, images, cover tapes, coordinate systems, tables, stickers, link cards and embedded web pages alone. Text is always erased.</p>
 
     <h3>I can't select anything / dragging draws instead</h3>
     <p>Make sure you are on the Select tool (<kbd>1</kbd> or <kbd>V</kbd>). Dragging with the pen selected draws.</p>
@@ -444,5 +454,15 @@ export const HELP_EN = {
 
     <h3>I deleted something by accident</h3>
     <p><kbd>Ctrl+Z</kbd>. Everything can be undone, including clearing the board. The undo history is reset after closing and reopening the board.</p>
+  `,
+
+  update: `
+    <h3>Check for updates</h3>
+    <p>This does the same as <b>Help → Check for updates…</b> in the menu, and the settings here are the same. A new version is downloaded in the background; when it is ready you are asked whether to install it now. If you choose later, it is installed silently when the app closes. The board is saved before installing. In development mode (<code>npm start</code>) updates are not checked.</p>
+    <p><label><input type="checkbox" id="helpAutoUpdate" /> Check for updates automatically</label></p>
+    <p class="muted">When on, the app checks 10 seconds after it starts and then every 4 hours.</p>
+    <p><button id="helpCheckUpdate" class="helpbtn">Check for updates…</button></p>
+    <p id="helpUpdateState" class="muted"></p>
+    <p class="muted">Version <span id="helpUpdateVersion">—</span></p>
   `,
 };

@@ -15,6 +15,10 @@ let send = () => {};
 let state = 'idle'; // 'checking' | 'downloading' | 'ready'
 let manual = false; // kullanıcı menüden denetlediyse "güncel" / hata sonucu da gösterilir
 let readyVersion = null;
+let percent = 0; // indirme yüzdesi (rehberdeki durum satırı için)
+let result = null; // son denetimin sonucu: 'uptodate' | 'error'
+let errorText = '';
+let lastProgressNotify = 0;
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -28,6 +32,17 @@ function message(opts) {
 function setProgress(p) {
   const win = getWin();
   if (win) win.setProgressBar(p);
+}
+
+// Rehberdeki "Güncellemeleri denetle" sekmesi durumu buradan okur. Sekme kapalıyken gönderilen
+// olaylar kaybolur; sekme açılınca 'update:info' ile son durum bir bütün olarak alınır.
+function status() {
+  return { state, readyVersion, percent, result, error: errorText };
+}
+
+function notify() {
+  const win = getWin();
+  if (win && !win.isDestroyed()) win.webContents.send('update:state', status());
 }
 
 async function askInstall() {
@@ -45,6 +60,8 @@ async function askInstall() {
 
 autoUpdater.on('update-available', (info) => {
   state = 'downloading';
+  percent = 0;
+  notify();
   if (manual) {
     message({
       type: 'info',
@@ -58,6 +75,9 @@ autoUpdater.on('update-available', (info) => {
 
 autoUpdater.on('update-not-available', () => {
   state = 'idle';
+  result = 'uptodate';
+  errorText = '';
+  notify();
   if (manual) {
     message({
       type: 'info',
@@ -69,45 +89,61 @@ autoUpdater.on('update-not-available', () => {
   manual = false;
 });
 
-autoUpdater.on('download-progress', (p) => setProgress(p.percent / 100));
+autoUpdater.on('download-progress', (p) => {
+  setProgress(p.percent / 100);
+  percent = p.percent;
+  const now = Date.now();
+  if (now - lastProgressNotify >= 250) { lastProgressNotify = now; notify(); }
+});
 
 autoUpdater.on('update-downloaded', (info) => {
   state = 'ready';
   readyVersion = info.version;
+  percent = 100;
   setProgress(-1);
+  notify();
   askInstall();
 });
 
 // Otomatik denetimdeki hatalar (ör. internet yok) sessizce geçilir.
 autoUpdater.on('error', (err) => {
   state = readyVersion ? 'ready' : 'idle';
+  result = 'error';
+  errorText = err?.message || String(err);
   setProgress(-1);
+  notify();
   if (manual) {
     message({
       type: 'error',
       title: L('Güncelleme denetlenemedi'),
       message: L('Güncelleme denetlenemedi.'),
-      detail: err?.message || String(err),
+      detail: errorText,
     });
   }
   manual = false;
 });
 
-function check(byUser = false) {
+// quiet: rehberdeki sekmeden yapılan denetim; pencere açılmaz, sonuç sekmede yazılır.
+function check(byUser = false, quiet = false) {
+  const dialogs = byUser && !quiet;
   if (!app.isPackaged) {
-    if (byUser) message({ type: 'info', title: L('Güncelleme'), message: L('Geliştirme modunda güncelleme denetlenmez.') });
+    if (dialogs) message({ type: 'info', title: L('Güncelleme'), message: L('Geliştirme modunda güncelleme denetlenmez.') });
     return;
   }
   if (state === 'ready') {
-    if (byUser) askInstall();
+    if (dialogs) askInstall();
     return;
   }
   if (state !== 'idle') {
-    if (byUser) message({ type: 'info', title: L('Güncelleme'), message: L('Güncelleme zaten denetleniyor ya da indiriliyor.') });
+    if (dialogs) message({ type: 'info', title: L('Güncelleme'), message: L('Güncelleme zaten denetleniyor ya da indiriliyor.') });
     return;
   }
   state = 'checking';
-  manual = byUser;
+  manual = dialogs;
+  result = null;
+  errorText = '';
+  percent = 0;
+  notify();
   autoUpdater.checkForUpdates().catch(() => {}); // hata 'error' olayında ele alınır
 }
 
@@ -126,4 +162,4 @@ function init(opts) {
   setInterval(auto, CHECK_INTERVAL);
 }
 
-module.exports = { init, check, install };
+module.exports = { init, check, install, status };

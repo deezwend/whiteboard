@@ -500,6 +500,27 @@ const EN = {
 
   // Bağlantı kartı ve web'den resim
   'Bağlantıyı aç': 'Open link',
+  // Gömülü web sayfası
+  'Web sayfası göm — Desmos, GeoGebra, YouTube… tahtada canlı açılır; çift tıklayınca etkileşime girersin':
+    'Embed web page — Desmos, GeoGebra, YouTube… open live on the board; double-click to interact',
+  'Göm': 'Embed',
+  'Sayfayı tahtaya gömer; çift tıklayınca tahtada canlı açılır': 'Embeds the page on the board; double-click to open it live',
+  'Etkileşimli aç': 'Open live',
+  'Sayfayı tahtada canlı açar (çift tık da açar)': 'Opens the page live on the board (double-click also does)',
+  'Tarayıcıda aç': 'Open in browser',
+  'Sayfayı varsayılan tarayıcıda açar': 'Opens the page in your default browser',
+  'Bağlantı kartına çevir': 'Turn into link card',
+  'Gömülü sayfayı bağlantı kartına çevirir': 'Turns the embedded page into a link card',
+  'Web sayfası göm': 'Embed web page',
+  'Desmos, GeoGebra, YouTube, Figma, Google Dokümanlar… Sayfa tahtada canlı açılır.':
+    'Desmos, GeoGebra, YouTube, Figma, Google Docs… The page opens live on the board.',
+  'Bu adres gömülemiyor': "This address can't be embedded",
+  'Sayfa denetleniyor…': 'Checking the page…',
+  'Bu site tahtaya gömülmeye izin vermiyor': "This site doesn't allow embedding",
+  'Bu site tahtaya gömülmeye izin vermiyor; bağlantı kartı eklendi': "This site doesn't allow embedding; added a link card instead",
+  'Çift tıkla: etkileşimli aç': 'Double-click to open live',
+  'Sayfayı yeniden yükle': 'Reload the page',
+  'Etkileşimden çık (Esc)': 'Leave the live page (Esc)',
   'Bilgileri yenile': 'Refresh details',
   'Bağlantıyı varsayılan tarayıcıda açar (çift tık da açar)': 'Opens the link in the default browser (double-click also opens it)',
   'Sayfanın başlığını ve açıklamasını yeniden okur': "Reads the page's title and description again",
@@ -554,6 +575,16 @@ const EN = {
   'Şablon eklendi — çerçeve ve başlıklar kilitli; seçmek için çift tıkla, kilidi Ctrl+L ile aç':
     'Template inserted — frames and titles are locked; double-click to select, Ctrl+L unlocks',
   'Şablon eklendi': 'Template inserted',
+
+  // Güncellemeleri denetle (rehber sekmesi)
+  'Güncellemeleri denetle': 'Check for updates',
+  'Denetleniyor…': 'Checking…',
+  'İndiriliyor… %{yuzde}': 'Downloading… %{yuzde}',
+  'Sürüm {surum} indirildi; uygulama yeniden başlatılınca kurulacak.':
+    'Version {surum} downloaded; it will be installed when the app restarts.',
+  'Beyaz Tahta güncel.': 'Whiteboard is up to date.',
+  'Denetlenemedi: {hata}': 'Could not check: {hata}',
+  'Geliştirme modunda güncelleme denetlenmez.': 'Updates are not checked in development mode.',
 };
 
 export function t(tr, params) {

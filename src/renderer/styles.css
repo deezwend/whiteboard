@@ -696,11 +696,12 @@ kbd {
 }
 #helpContent .keychip:hover { border-color: var(--active); color: inherit; }
 #helpContent .keychip.capturing { background: var(--active); color: inherit; }
-#helpContent .keyreset {
+#helpContent .keyreset, #helpContent .helpbtn {
   font: inherit; color: inherit; background: var(--hover);
   border: 1px solid var(--panel-border); border-radius: 6px; padding: 4px 12px; cursor: pointer;
 }
-#helpContent .keyreset:hover { border-color: var(--active); }
+#helpContent .keyreset:hover, #helpContent .helpbtn:hover { border-color: var(--active); }
+#helpContent .helpbtn:disabled { opacity: 0.45; cursor: default; border-color: var(--panel-border); }
 #helpContent .hit { background: var(--active); border-radius: 4px; box-shadow: -4px 0 0 var(--active); }
 @media (max-width: 760px) {
   .help-body { flex-direction: column; }
@@ -935,3 +936,52 @@ kbd {
   color: var(--text);
   opacity: .75;
 }
+
+/* ----- Gömülü web sayfası (canlı) ----- */
+/* Araç çubuklarının üstünde, pencerelerin (galeri, dışa aktarma…) altında. */
+#embedLayer { position: fixed; inset: 0; pointer-events: none; z-index: 20; overflow: hidden; }
+.embed-live {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  background: #ffffff;
+  border-radius: 6px;
+  outline: 2px solid var(--active-fg);
+  box-shadow: var(--shadow);
+}
+.embed-live iframe { display: block; border: 0; transform-origin: 0 0; background: #ffffff; }
+.embed-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 3px 0 10px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font: 12px "Segoe UI", system-ui, sans-serif;
+}
+.embed-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+.embed-btn, .embed-done {
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.embed-btn { width: 26px; display: grid; place-items: center; }
+.embed-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.embed-btn:hover { background: var(--hover); }
+.embed-done { padding: 0 10px; background: var(--active); color: var(--active-fg); font-weight: 600; }
+.embed-done:hover { filter: brightness(0.96); }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, nativeTheme, net, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -805,7 +805,7 @@ async function fetchLimited(url, maxBytes, timeoutMs, truncate) {
         break;
       }
     }
-    return { type: (res.headers.get('content-type') || '').toLowerCase(), buf: Buffer.concat(chunks) };
+    return { type: (res.headers.get('content-type') || '').toLowerCase(), buf: Buffer.concat(chunks), headers: res.headers };
   } finally {
     clearTimeout(timer);
   }
@@ -866,6 +866,81 @@ ipcMain.handle('net:image', async (_e, u) => {
   }
 });
 
+// ---------- Gömülü sayfalar (embed) ----------
+// Embed, tahtada son ekran görüntüsüyle çizilir; çift tıklayınca aynı yerde canlı bir iframe açılır.
+// Eklemeden önce sayfanın iframe içinde gösterilmeye izin verip vermediğine bakılır; izin vermeyen
+// site bağlantı kartı olarak eklenir. Ekran görüntüsü, iframe kapanmadan hemen önce pencereden alınır.
+
+const EMBED_SHOT_MAX = 1280; // ekran görüntüsünün en uzun kenarı (dosya boyutu küçük kalsın)
+// Gömülü sayfaların isteyebileceği izinler; kamera, mikrofon, konum, bildirim vb. reddedilir.
+const EMBED_PERMS = new Set(['fullscreen', 'clipboard-sanitized-write']);
+
+// Sayfa iframe içinde gösterilmeyi yasaklıyor mu (X-Frame-Options ya da CSP frame-ancestors)?
+// Uygulamanın kendi sayfası file:// adresinde olduğu için '*' dışındaki her frame-ancestors yasaktır.
+function frameBlocked(headers) {
+  const xfo = (headers.get('x-frame-options') || '').trim().toLowerCase();
+  if (xfo && xfo !== 'allowall') return true;
+  const fa = /(?:^|;)\s*frame-ancestors\s+([^;,]*)/i.exec(headers.get('content-security-policy') || '');
+  return !!fa && !/(?:^|\s)\*(?:\s|$)/.test(fa[1]);
+}
+
+ipcMain.handle('embed:check', async (_e, u) => {
+  const url = webUrl(u);
+  if (!url) return { error: L('Geçersiz adres.') };
+  try {
+    const { type, buf, headers } = await fetchLimited(url.href, 512 * 1024, 8000, true);
+    const info = type.includes('html') ? pageInfo(buf.toString('utf8')) : { title: '', desc: '' };
+    return { blocked: frameBlocked(headers), title: info.title };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// r: iframe'in pencere içindeki yeri (CSS pikseli). Sonuç küçültülmüş bir JPEG.
+ipcMain.handle('embed:capture', async (e, r) => {
+  const z = e.sender.getZoomFactor();
+  const rect = { x: Math.round(r.x * z), y: Math.round(r.y * z), width: Math.round(r.w * z), height: Math.round(r.h * z) };
+  if (!(rect.width > 0 && rect.height > 0)) return { error: L('Geçersiz alan.') };
+  try {
+    // Pencere gizliyken (ör. simge durumunda) capturePage hiç dönmeyebilir.
+    let img = await Promise.race([e.sender.capturePage(rect), new Promise((done) => setTimeout(done, 3000, null))]);
+    if (!img || img.isEmpty()) return { error: L('Ekran görüntüsü alınamadı.') };
+    const { width, height } = img.getSize();
+    const k = Math.min(1, EMBED_SHOT_MAX / Math.max(width, height));
+    if (k < 1) img = img.resize({ width: Math.round(width * k), height: Math.round(height * k), quality: 'good' });
+    return { src: 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64') };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Gömülü sayfalar uygulamanın kendi oturumunda çalışır; izinleri sınırlanır ve ana pencereyi
+// başka bir adrese götüremez, yeni pencereleri varsayılan tarayıcıda açılır.
+function setupEmbedSecurity() {
+  const fromApp = (u) => String(u || '').startsWith('file:');
+  const ses = session.defaultSession;
+  ses.setPermissionRequestHandler((_wc, perm, cb, details) => cb(fromApp(details.requestingUrl) || EMBED_PERMS.has(perm)));
+  ses.setPermissionCheckHandler((_wc, perm, origin) => fromApp(origin) || EMBED_PERMS.has(perm));
+  // YouTube oynatıcısı gömen sayfayı Referer başlığından tanır; file:// sayfası bu başlığı
+  // göndermediği için "Hata 153" verir. Yalnızca oynatıcı isteklerine uygulamanın adresi eklenir.
+  const players = ['https://www.youtube-nocookie.com/embed/*', 'https://www.youtube.com/embed/*'];
+  ses.webRequest.onBeforeSendHeaders({ urls: players }, (d, cb) => {
+    if (!d.requestHeaders.Referer) d.requestHeaders.Referer = 'https://github.com/deezwend/beyaz-tahta';
+    cb({ requestHeaders: d.requestHeaders });
+  });
+}
+
+function guardWindow(w) {
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    const u = webUrl(url);
+    if (u) shell.openExternal(u.href);
+    return { action: 'deny' };
+  });
+  w.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file:')) e.preventDefault();
+  });
+}
+
 // ---------- Tema ----------
 
 // nativeTheme.themeSource hem pencerenin CSS'teki prefers-color-scheme değerini hem de
@@ -917,6 +992,21 @@ function autoUpdateEnabled() {
 
 // Renderer tahtayı kaydettikten (ya da kullanıcı "Kaydetme" dedikten) sonra çağırır.
 ipcMain.on('update:install', () => updater.install());
+
+// Rehberdeki "Güncellemeleri denetle" sekmesi menüdeki ayarların aynısını gösterir. Denetim
+// oradan sessizce yapılır; sonuç pencere (dialog) yerine sekmedeki durum satırında yazılır.
+ipcMain.handle('update:info', () => ({
+  version: app.getVersion(),
+  auto: autoUpdateEnabled(),
+  packaged: app.isPackaged,
+  ...updater.status(),
+}));
+ipcMain.handle('update:auto', (_e, on) => {
+  writeSettings({ autoUpdate: !!on });
+  buildMenu(); // menüdeki onay imi sekmeyle aynı kalsın
+  return autoUpdateEnabled();
+});
+ipcMain.on('update:check', () => updater.check(true, true));
 
 // ---------- Menü ----------
 
@@ -1004,6 +1094,7 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+  guardWindow(win);
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   updateTitle();
   win.on('closed', () => {
@@ -1027,6 +1118,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     applyTheme(readSettings().theme);
     initLang();
+    setupEmbedSecurity();
     buildMenu();
     createWindow();
     updater.init({ getWin: () => win, send, isEnabled: autoUpdateEnabled });

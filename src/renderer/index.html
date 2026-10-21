@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; frame-src https:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'" />
   <title>Beyaz Tahta</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="obsidian.css" />
@@ -12,6 +12,7 @@
   <textarea id="editor" spellcheck="false"></textarea>
   <!-- Yorumu olan nesnelerin köşesindeki rozetler (app.js "Yorumlar") -->
   <div id="commentPins"></div>
+  <div id="embedLayer"></div>
   <input id="imageInput" type="file" accept="image/*,application/pdf,.pdf" multiple hidden />
 
   <!-- Ana araç çubuğu. .tgroup içindeki araçlar tek düğmede toplanır (app.js "Araç grupları"); düğme son
@@ -125,6 +126,9 @@
       <button class="tool" data-action="link" title="Bağlantı kartı — web sayfasının başlığını gösterir, çift tıklayınca açılır (adres yapıştırmak da kart ekler)">
         <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></svg>
       </button>
+      <button class="tool" data-action="embed" title="Web sayfası göm — Desmos, GeoGebra, YouTube… tahtada canlı açılır; çift tıklayınca etkileşime girersin">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18M9.5 12.5L7 15l2.5 2.5M14.5 12.5L17 15l-2.5 2.5"/></svg>
+      </button>
       <button class="tool" data-action="webImage" title="Web'de resim ara — tarayıcıda açılır; resmi tahtaya sürükle ya da kopyalayıp yapıştır">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="11" rx="1.5"/><path d="M3 13l4-4 4 4"/><circle cx="16.5" cy="16.5" r="3.5"/><path d="M19 19l2.5 2.5"/></svg>
       </button>
@@ -184,6 +188,12 @@
     <div class="row" id="linkRow">
       <button class="chip" data-link="open" title="Bağlantıyı varsayılan tarayıcıda açar (çift tık da açar)">Bağlantıyı aç</button>
       <button class="chip" data-link="refresh" title="Sayfanın başlığını ve açıklamasını yeniden okur">Bilgileri yenile</button>
+      <button class="chip" data-link="embed" title="Sayfayı tahtaya gömer; çift tıklayınca tahtada canlı açılır">Göm</button>
+    </div>
+    <div class="row" id="embedRow">
+      <button class="chip" data-embed="open" title="Sayfayı tahtada canlı açar (çift tık da açar)">Etkileşimli aç</button>
+      <button class="chip" data-embed="browser" title="Sayfayı varsayılan tarayıcıda açar">Tarayıcıda aç</button>
+      <button class="chip" data-embed="toLink" title="Gömülü sayfayı bağlantı kartına çevirir">Bağlantı kartına çevir</button>
     </div>
     <div class="row" id="fillRow">
       <button class="chip" data-fill="none" title="Dolgu yok">Boş</button>
@@ -476,6 +486,7 @@
           <button data-help-tab="student">Öğrenci modu</button>
           <button data-help-tab="keys">Kısayollar</button>
           <button data-help-tab="faq">Sorun giderme</button>
+          <button data-help-tab="update">Güncellemeleri denetle</button>
         </nav>
         <div id="helpContent">
 
@@ -493,14 +504,14 @@
 
             <h3>Ekranın düzeni</h3>
             <ul>
-              <li><b>Üst orta – araç çubuğu:</b> kalemler, silgi, cetvel, şekiller, metin/not, ekleme araçları, geri al / yinele.</li>
+              <li><b>Üst orta – araç çubuğu:</b> Seç (Makas ile aynı düğmede) ve Kaydır (el); kalemler, silgi, boya kovası, cetvel, açıölçer; şekiller, pergel; metin, not ve bant; ekleme araçları; geri al / yinele. Açıölçer ve pergel yalnızca öğrenci modunda görünür.</li>
               <li><b>Sol üst:</b> menü düğmesi (☰), <b>Tahtalarım</b> galerisi ve kaydetme durumu.</li>
               <li><b>Araç çubuğunun altı – özellik paneli:</b> seçili araca ya da seçili nesnelere göre değişir; renk, kalınlık, dolgu, yazı boyutu, fırça türü gibi ayarlar burada. Alt kenarındaki okla gizlenir.</li>
               <li><b>Sağ alt:</b> uzaklaştır / yakınlaştır, yüzdeye tıklayınca %100'e dönüş, "tümünü sığdır" düğmesi.</li>
             </ul>
 
             <h3>Araç grupları</h3>
-            <p>Birbirine benzeyen araçlar (kalemler, şekiller, metin/not, ekle) tek düğmede toplanır. Düğme <b>en son kullandığın aracı</b> gösterir. Gruptaki diğer araçlara ulaşmak için:</p>
+            <p>Birbirine benzeyen araçlar (seç/makas, kalemler, şekiller, metin/not/bant, ekle) tek düğmede toplanır. Düğme <b>en son kullandığın aracı</b> gösterir. Gruptaki diğer araçlara ulaşmak için:</p>
             <ul>
               <li>aktif düğmeye <b>bir kez daha tıkla</b>, ya da</li>
               <li>düğmeye <b>sağ tıkla</b>, ya da</li>
@@ -555,7 +566,7 @@
             <ul>
               <li><b>Bütün çizgi:</b> değdiğin çizgiyi tümüyle siler.</li>
               <li><b>Kısmi:</b> yalnızca silginin geçtiği kısmı siler, çizgi ikiye bölünür.</li>
-              <li><b>Not ve resimleri de sil:</b> kapalıyken silgi yalnızca çizgi ve şekillere dokunur; açıkken notları, metinleri ve resimleri de siler. Yanlışlıkla resim silmemek için varsayılan olarak kapalıdır.</li>
+              <li><b>Not ve resimleri de sil:</b> kapalıyken silgi yalnızca çizgileri, şekilleri ve metinleri siler; notlara, resimlere, gizleme bantlarına, koordinat sistemlerine, tablolara, çıkartmalara, bağlantı kartlarına ve gömülü sayfalara dokunmaz. Açıkken bu nesneleri de siler. Yanlışlıkla not ya da resim silmemek için varsayılan olarak kapalıdır.</li>
             </ul>
 
             <h3>Boya kovası <kbd>Z</kbd></h3>
@@ -649,7 +660,7 @@
 
             <h3>Tahtada arama <kbd>Ctrl+F</kbd></h3>
             <ul>
-              <li>Sağ üstte arama kutusu açılır. Metinlerde, yapışkan notlarda, Obsidian bölümlerinin başlıklarında ve koordinat sistemindeki fonksiyonlarda arar.</li>
+              <li>Sağ üstte arama kutusu açılır. Metinlerde, yapışkan notlarda, tablo hücrelerinde, bağlantı kartlarında (başlık, açıklama, adres), gömülü web sayfalarında (başlık, adres), Obsidian bölümlerinin başlıklarında, koordinat sistemindeki fonksiyonlarda ve yorumlarda arar.</li>
               <li>Bulunan yerler sarı çerçeveyle işaretlenir, sıradaki ekranın ortasına gelir. <kbd>Enter</kbd> sonraki, <kbd>Shift+Enter</kbd> önceki; <kbd>Esc</kbd> kapatır.</li>
               <li>Elle yazılmış (kalemle çizilmiş) yazılar aranamaz.</li>
             </ul>
@@ -703,7 +714,7 @@
             <p>Metin grubundaki <b>Çıkartma</b> aracını seç (ya da <kbd>M</kbd>), panelden bir emoji seç (👍 ❤️ ⭐ ✅ 💡 …) ve tahtada istediğin yere tıkla. Her tıklama bir çıkartma yapıştırır. Seçili çıkartmaların emojisi panelden değiştirilebilir; resim gibi boyutlandırılır ve döndürülür. Silgi çıkartmaları yalnızca "Not ve resimleri de sil" açıkken siler.</p>
 
             <h3>Panodan yapıştırma</h3>
-            <p>Başka bir yerden kopyaladığın <b>düz yazıyı</b> tahtaya <kbd>Ctrl+V</kbd> ile yapıştırırsan, imlecin olduğu yerde bir metin nesnesi olur. Kopyaladığın <b>resim</b> (ör. ekran görüntüsü) ise resim olarak eklenir. Yalnızca bir <b>web adresi</b> yapıştırırsan bağlantı kartı olur; adres bir resme aitse (.png, .jpg…) resim indirilip eklenir.</p>
+            <p>Başka bir yerden kopyaladığın <b>düz yazıyı</b> tahtaya <kbd>Ctrl+V</kbd> ile yapıştırırsan, imlecin olduğu yerde bir metin nesnesi olur. Kopyaladığın <b>resim</b> (ör. ekran görüntüsü) ise resim olarak eklenir. Yalnızca bir <b>web adresi</b> yapıştırırsan bağlantı kartı olur (Desmos, YouTube gibi bilinen sitelerin adresi gömülü sayfa olur); adres bir resme aitse (.png, .jpg…) resim indirilip eklenir.</p>
           </section>
 
           <section data-help-section="insert">
@@ -726,7 +737,17 @@
             <ul>
               <li>Ekle grubundan <b>Bağlantı kartı</b>'na bas (ya da <kbd>F</kbd>) ve web adresini yaz; ya da adresi doğrudan tahtaya yapıştır / tarayıcıdan sürükle.</li>
               <li>Kart sayfanın <b>başlığını</b>, kısa <b>açıklamasını</b> ve alan adını gösterir (bilgiler internetten okunur; bağlantı yoksa yalnızca adres görünür).</li>
-              <li>Karta <b>çift tıklayınca</b> sayfa varsayılan tarayıcıda açılır. Panelde <b>Bağlantıyı aç</b> ve <b>Bilgileri yenile</b> vardır.</li>
+              <li>Karta <b>çift tıklayınca</b> sayfa varsayılan tarayıcıda açılır. Panelde <b>Bağlantıyı aç</b>, <b>Bilgileri yenile</b> ve <b>Göm</b> vardır.</li>
+            </ul>
+
+            <h3>Gömülü web sayfası</h3>
+            <ul>
+              <li>Ekle grubundan <b>Web sayfası göm</b>'e bas ve adresi yaz. <b>Desmos</b>, <b>GeoGebra</b>, <b>YouTube</b>, <b>Vimeo</b>, <b>Figma</b>, <b>CodePen</b>, <b>Google Dokümanlar</b>, <b>Google Haritalar</b>, <b>Spotify</b> ve <b>Loom</b> adresleri yapıştırınca ya da sürükleyince de doğrudan gömülür.</li>
+              <li>Sayfa tahtada <b>son görüntüsüyle</b> durur: taşınır, boyutlandırılır, üstüne çizilir ve dışa aktarmada görünür. <b>Çift tıklayınca</b> aynı yerde canlı açılır; grafiğe fonksiyon yazabilir, videoyu oynatabilirsin.</li>
+              <li>Sayfa seçiliyken panelde <b>Etkileşimli aç</b> (çift tıklamayla aynı), <b>Tarayıcıda aç</b> (varsayılan tarayıcıda açar) ve <b>Bağlantı kartına çevir</b> (sayfayı bağlantı kartı yapar) düğmeleri çıkar.</li>
+              <li>Canlıyken sayfanın üstündeki çubukta sayfanın başlığı ile <b>Sayfayı yeniden yükle</b>, <b>Tarayıcıda aç</b> ve <b>Bitti</b> düğmeleri vardır. <b>Bitti</b>'ye bas, tahtada boş bir yere tıkla ya da <kbd>Esc</kbd>'ye bas. Çıkarken sayfanın görünen hâli yeni görüntüsü olur (sayfanın tamamı ekrandaysa).</li>
+              <li>Aynı anda yalnızca bir sayfa canlıdır. Gömülmeye izin vermeyen siteler bağlantı kartı olarak eklenir. İnternet yokken yalnızca son görüntü görünür.</li>
+              <li>Desmos'ta yaptığın değişikliklerin kalıcı olması için Desmos'ta kaydedip paylaşım bağlantısını gömmelisin; tahta sayfanın adresini ve son görüntüsünü saklar.</li>
             </ul>
 
             <h3>Şablonlar <kbd>J</kbd></h3>
@@ -892,7 +913,7 @@
             <p>Kalemle (fırça türü fark etmez, Oklu ve Kesikli ok hariç) çizerken özellik panelinde <b>Şekle dönüştür</b> düğmesini kapat. Dönüşüm olduktan sonra <kbd>Ctrl+Z</kbd> el çizimini geri getirir.</p>
 
             <h3>Silgi resimlerimi ve notlarımı silmiyor</h3>
-            <p>Silgi panelinde <b>Not ve resimleri de sil</b> açık olmalı. Bilerek kapalı gelir.</p>
+            <p>Metinleri silgi her zaman siler. Notlar, resimler, gizleme bantları, tablolar, çıkartmalar, bağlantı kartları, gömülü sayfalar ve koordinat sistemleri için panelde <b>Not ve resimleri de sil</b> açık olmalı. Bilerek kapalı gelir.</p>
 
             <h3>Bir şeyi seçemiyorum / sürüklediğimde çizim yapıyorum</h3>
             <p>Seç aracında olduğundan emin ol (<kbd>1</kbd> ya da <kbd>V</kbd>). Kalem seçiliyken sürüklemek çizer.</p>
@@ -921,6 +942,16 @@
 
             <h3>Yanlışlıkla bir şeyi sildim</h3>
             <p><kbd>Ctrl+Z</kbd>. Tahtayı temizlemek de dahil her şey geri alınabilir. Tahtayı kapatıp açtıktan sonra geri alma geçmişi sıfırlanır.</p>
+          </section>
+
+          <section data-help-section="update">
+            <h3>Güncellemeleri denetle</h3>
+            <p>Menüdeki <b>Yardım → Güncellemeleri denetle…</b> ile aynı işi yapar; ayarlar burada da aynıdır. Yeni sürüm varsa arka planda indirilir; hazır olunca kurmak için sorulur. <b>Sonra</b> dersen uygulamayı kapattığında sessizce kurulur; kurmadan önce tahta kaydedilir. Geliştirme modunda (<code>npm start</code>) güncelleme denetlenmez.</p>
+            <p><label><input type="checkbox" id="helpAutoUpdate" /> Güncellemeleri otomatik denetle</label></p>
+            <p class="muted">Açıkken uygulama açıldıktan 10 saniye sonra ve sonrasında her 4 saatte bir kendiliğinden denetler.</p>
+            <p><button id="helpCheckUpdate" class="helpbtn">Güncellemeleri denetle…</button></p>
+            <p id="helpUpdateState" class="muted"></p>
+            <p class="muted">Sürüm <span id="helpUpdateVersion">—</span></p>
           </section>
 
           <p id="helpEmpty" class="muted hidden">Aramanla eşleşen bir şey bulunamadı.</p>

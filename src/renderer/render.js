@@ -1,6 +1,8 @@
 // Öğeleri ve arka planı tuvale çizer.
 import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, CELL_PAD, arrowHeadSize, normRect, BRUSH_WIDTH, bbox } from './geometry.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
+import { providerName } from './embed.js';
+import { t } from './i18n.js';
 
 // Açılmış gizleme bantlarının kimlikleri. Dosyaya kaydedilmez: tahta her açıldığında bantlar kapalıdır.
 export const revealedCovers = new Set();
@@ -714,6 +716,10 @@ export function drawElement(ctx, el, hideText = false) {
       drawLink(ctx, el);
       break;
 
+    case 'embed':
+      drawEmbed(ctx, el);
+      break;
+
     case 'image': {
       const img = getImage(el.src);
       const b = normRect(el.x, el.y, el.w, el.h);
@@ -830,6 +836,39 @@ function drawLink(ctx, el) {
   ctx.fillStyle = '#1971c2';
   ctx.font = `12px ${FONT_FAMILY}`;
   ctx.fillText(ellipsize(ctx, host, tw), tx, el.desc ? 57 : 40);
+}
+
+// Gömülü sayfa: son ekran görüntüsü; henüz yoksa sitenin adını gösteren bir yer tutucu.
+function drawEmbed(ctx, el) {
+  const b = normRect(el.x, el.y, el.w, el.h);
+  const img = el.thumb ? getImage(el.thumb) : null;
+  roundRectPath(ctx, b.x, b.y, b.w, b.h, Math.min(8, b.w / 8, b.h / 8));
+  ctx.fillStyle = img ? '#ffffff' : '#f3f5f8';
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  if (img?.complete && img.naturalWidth) drawImageSmooth(ctx, img, b.x, b.y, b.w, b.h);
+  else {
+    // 400 birim genişliğinde bir tasarım alanında çizilip kutuya ölçeklenir.
+    const k = Math.min(b.w / 400, b.h / 120);
+    const tw = b.w / k - 32;
+    ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+    ctx.scale(k, k);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `28px ${EMOJI_FONT}`;
+    ctx.fillText('\u{1F310}', 0, -36);
+    ctx.fillStyle = '#1f2328';
+    ctx.font = `600 16px ${FONT_FAMILY}`;
+    ctx.fillText(ellipsize(ctx, el.title || providerName(el) || linkHost(el.url), tw), 0, 0);
+    ctx.fillStyle = '#57606a';
+    ctx.font = `13px ${FONT_FAMILY}`;
+    ctx.fillText(ellipsize(ctx, t('Çift tıkla: etkileşimli aç'), tw), 0, 24);
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#d0d7de';
+  ctx.lineWidth = Math.min(1, b.w / 200);
+  ctx.stroke();
 }
 
 export function linkHost(url) {
