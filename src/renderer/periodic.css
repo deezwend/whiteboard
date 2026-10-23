@@ -1,0 +1,139 @@
+/* Periyodik tablo penceresi — periodic.js tarafından oluşturulan DOM, #periodicPicker altında kapsanır.
+   Element hücreleri tahtaya eklenen tablo gibi açık renklidir; çerçeve ve yazılar tema değişkenlerinden gelir. */
+
+#periodicPicker {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 25, 40, 0.35);
+  z-index: 38;
+  display: grid;
+  place-items: center;
+}
+
+#periodicPicker .pt-card {
+  position: static;
+  width: min(1320px, 96vw);
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+  margin: 0;
+  overflow: auto;
+}
+
+#periodicPicker .pt-head { display: flex; align-items: center; gap: 12px; }
+#periodicPicker .pt-head h2 { margin: 0; font-size: 18px; white-space: nowrap; }
+#periodicPicker .pt-search {
+  flex: 1;
+  max-width: 360px;
+  margin-left: auto;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--chip-bg);
+  color: var(--text);
+  outline: none;
+  user-select: text;
+}
+#periodicPicker .pt-search:focus { border-color: var(--focus-border); box-shadow: 0 0 0 3px var(--focus-shadow); }
+
+/* 18 sütun; 1-7 periyotlar, 8 boşluk, 9-10 lantanitler ve aktinitler */
+#periodicPicker .pt-grid {
+  display: grid;
+  grid-template-columns: repeat(18, minmax(0, 1fr));
+  grid-template-rows: repeat(7, auto) 10px repeat(2, auto);
+  gap: 3px;
+}
+#periodicPicker .pt-el,
+#periodicPicker .pt-ph {
+  aspect-ratio: 1 / 1.02;
+  min-width: 0;
+  border: 1px solid var(--fg);
+  border-radius: 6px;
+  background: var(--bg);
+  color: #1f2328;
+  font: inherit;
+  padding: 2px 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: opacity 0.12s, transform 0.08s;
+}
+#periodicPicker .pt-ph { border-style: dashed; cursor: default; font-size: 11px; font-weight: 600; }
+#periodicPicker .pt-el i {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+#periodicPicker .pt-el b { font-size: clamp(13px, 1.45vw, 21px); line-height: 1.1; margin-top: 6px; }
+#periodicPicker .pt-el span {
+  font-size: clamp(7px, 0.62vw, 9.5px);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#periodicPicker .pt-el:hover, #periodicPicker .pt-el.current { transform: scale(1.08); z-index: 1; box-shadow: 0 2px 8px rgba(20, 25, 40, 0.25); }
+#periodicPicker .pt-el:focus-visible { outline: 2px solid var(--active-fg); outline-offset: 1px; }
+#periodicPicker .pt-el.selected { box-shadow: 0 0 0 2.5px var(--active-fg); z-index: 1; }
+#periodicPicker .pt-el.selected::after {
+  content: '✓';
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--active-fg);
+}
+
+/* Aramada ya da sınıf vurgusunda eşleşmeyenler soluklaşır. */
+#periodicPicker .pt-grid.filtering .pt-el:not(.match),
+#periodicPicker .pt-grid[data-hl] .pt-el,
+#periodicPicker .pt-grid[data-hl] .pt-ph { opacity: 0.22; }
+#periodicPicker .pt-grid[data-hl="a"] .cat-a,
+#periodicPicker .pt-grid[data-hl="ae"] .cat-ae,
+#periodicPicker .pt-grid[data-hl="tm"] .cat-tm,
+#periodicPicker .pt-grid[data-hl="pt"] .cat-pt,
+#periodicPicker .pt-grid[data-hl="md"] .cat-md,
+#periodicPicker .pt-grid[data-hl="nm"] .cat-nm,
+#periodicPicker .pt-grid[data-hl="h"] .cat-h,
+#periodicPicker .pt-grid[data-hl="ng"] .cat-ng,
+#periodicPicker .pt-grid[data-hl="la"] .cat-la,
+#periodicPicker .pt-grid[data-hl="ac"] .cat-ac,
+#periodicPicker .pt-grid[data-hl="un"] .cat-un { opacity: 1; }
+
+/* Üst ortadaki boşlukta seçili elementin kartı */
+#periodicPicker .pt-preview {
+  grid-row: 1 / 4;
+  grid-column: 3 / 13;
+  display: grid;
+  place-items: center;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+#periodicPicker .pt-preview canvas { position: absolute; display: block; filter: drop-shadow(0 2px 6px rgba(20, 25, 40, 0.18)); }
+
+#periodicPicker .pt-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+#periodicPicker .pt-cat { display: inline-flex; align-items: center; gap: 6px; cursor: default; padding: 2px 4px; border-radius: 6px; }
+#periodicPicker .pt-cat:hover { background: var(--hover); }
+#periodicPicker .pt-cat i { width: 16px; height: 12px; border-radius: 3px; background: var(--bg); border: 1px solid var(--fg); }
+
+#periodicPicker .pt-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; border-top: 1px solid var(--panel-border); padding-top: 10px; }
+#periodicPicker .pt-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 13px; }
+#periodicPicker .pt-opt { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+#periodicPicker .pt-hint { font-size: 12px; }
+#periodicPicker .muted { color: var(--muted); }
+#periodicPicker .pt-actions { display: flex; gap: 8px; margin-left: auto; }
+#periodicPicker .pt-actions .chip:disabled { opacity: 0.5; cursor: default; }

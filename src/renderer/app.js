@@ -13,6 +13,7 @@ import { createRuler, rulerHit, nearEdge, projectOnEdge, snapAngle, drawRuler } 
 import { createProtractor, protractorHit, nearArc, setArm, drawProtractor, PROT_R } from './protractor.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
 import { openObsidianPicker } from './obsidian-picker.js';
+import { openPeriodicPicker, periodicPickerOpen } from './periodic.js';
 import { embedFor, createLiveEmbed } from './embed.js';
 import { t, lang, locale } from './i18n.js';
 
@@ -216,6 +217,8 @@ const styles = {
 // PDF eklerken sayfalar kilitlensin mi; PDF dışa aktarma / yazdırma seçenekleri.
 let pdfLock = true;
 let studentMode = false;
+// Rehberin (F1) Araçlar sekmesinde kapatılan araçlar/eylemler (araç çubuğu ve kısayollardan kalkar).
+let disabledTools = new Set();
 let exportOpts = { orient: 'portrait', fit: 'width', bg: true };
 let tool = 'pen';
 // Her araç grubunda en son kullanılan araç (grup adı -> araç), düğmede o gösterilir.
@@ -277,6 +280,7 @@ function loadPrefs() {
     if (typeof p.autoSave === 'boolean') autoSave = p.autoSave;
     if (typeof p.pdfLock === 'boolean') pdfLock = p.pdfLock;
     if (typeof p.studentMode === 'boolean') studentMode = p.studentMode;
+    if (Array.isArray(p.disabledTools)) disabledTools = new Set(p.disabledTools);
     if (typeof p.showComments === 'boolean') showComments = p.showComments;
     if (p.exportOpts) Object.assign(exportOpts, p.exportOpts);
   } catch { /* tercihler isteğe bağlı */ }
@@ -284,7 +288,7 @@ function loadPrefs() {
 
 function savePrefs() {
   try {
-    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick, props: propsUi, autoSave, pdfLock, exportOpts, studentMode, showComments }));
+    localStorage.setItem('prefs', JSON.stringify({ styles, tool, groups: groupPick, props: propsUi, autoSave, pdfLock, exportOpts, studentMode, showComments, disabledTools: [...disabledTools] }));
   } catch { /* yoksay */ }
 }
 
@@ -415,13 +419,8 @@ function applyStudentMode() {
     protractor = null;
     compass = null;
     $('[data-action="protractor"]').classList.remove('active');
-    if (STUDENT_TARGETS.includes(tool)) setTool('pen');
   }
-  // Grup düğmesi gizlenen bir aracı gösteriyorsa gruptaki ilk görünür araca geçer.
-  for (const grp of toolGroups) {
-    const pick = groupPick[grp.name];
-    showInGroup(grp, !studentMode && STUDENT_TARGETS.includes(pick) ? targetOf(grp.members[0]) : pick);
-  }
+  refreshToolbar();
   buildHelpKeys();
   sceneCacheValid = false;
   changed(false);
@@ -431,6 +430,53 @@ function studentOnly() {
   if (studentMode) return true;
   toast(t('Bu özellik Öğrenci modunda kullanılabilir — menüden (☰) aç'));
   return false;
+}
+
+// Seç aracı kapatılamaz: başka araç kalmasa da tahtada bir şey seçilebilsin.
+const ALWAYS_ON = ['select'];
+
+// Araç ya da eylem şu an kullanılabilir mi (Araçlar sekmesinde açık ve gerekiyorsa Öğrenci modu açık).
+function toolUsable(target) {
+  return !disabledTools.has(target) && (studentMode || !STUDENT_TARGETS.includes(target));
+}
+
+// Kapatılan araçları araç çubuğundan ve grup menülerinden kaldırır. Bütün üyeleri kapalı ya da
+// gizli olan grup düğmesi ve arasında görünür düğme kalmayan ayırıcılar da gizlenir.
+function refreshToolbar() {
+  for (const b of document.querySelectorAll('#toolbar button:not(.gmain)')) b.classList.toggle('tool-off', disabledTools.has(targetOf(b)));
+  if (ruler && disabledTools.has('ruler')) {
+    ruler = null;
+    $('[data-action="ruler"]').classList.remove('active');
+  }
+  if (protractor && disabledTools.has('protractor')) {
+    protractor = null;
+    $('[data-action="protractor"]').classList.remove('active');
+  }
+  if (disabledTools.has('compass')) compass = null;
+  // Grup düğmesi kullanılamayan bir aracı gösteriyorsa gruptaki ilk kullanılabilir araca geçer.
+  for (const grp of toolGroups) {
+    const usable = grp.members.map(targetOf).filter(toolUsable);
+    grp.el.classList.toggle('tool-off', !usable.length);
+    const pick = groupPick[grp.name];
+    showInGroup(grp, usable.includes(pick) ? pick : usable[0]);
+  }
+  let seen = false;
+  let sep = null;
+  for (const el of $('#toolbar').children) {
+    if (el.classList.contains('sep')) {
+      el.classList.add('tool-off');
+      if (seen) sep = el;
+    } else if (getComputedStyle(el).display !== 'none') {
+      sep?.classList.remove('tool-off');
+      sep = null;
+      seen = true;
+    }
+  }
+  if (!toolUsable(tool)) {
+    const tools = [...document.querySelectorAll('#toolbar button[data-tool]:not(.gmain)')].map(targetOf);
+    setTool(toolUsable('pen') ? 'pen' : tools.find(toolUsable) || 'select');
+  }
+  requestRender();
 }
 
 function updateAutoSaveUI() {
@@ -520,6 +566,7 @@ function loadBoard(data) {
   dirty = false;
   setSaveState(t('Kaydedildi'));
   updateBgUI();
+  applyReadOnly();
   changed(false);
   // Küçük resmi olmayan (eski) tahtalar galeride görünsün diye bir kez yeniden kaydedilir.
   if (autoSave && data && !data.thumb && board.elements.length) scheduleSave();
@@ -1258,6 +1305,7 @@ canvas.addEventListener('pointerdown', (e) => {
     requestRender();
     return;
   }
+  if (board.readOnly) return;
 
   // Cetvelin üzerine basmak, araç ne olursa olsun cetveli taşır/döndürür.
   const rh = ruler && !penEraser ? rulerHit(ruler, e.clientX, e.clientY) : null;
@@ -1900,7 +1948,7 @@ function cancelDrag() {
 canvas.addEventListener('mousedown', (e) => e.preventDefault());
 
 canvas.addEventListener('dblclick', (e) => {
-  if (activeTool() !== 'select') return;
+  if (activeTool() !== 'select' || board.readOnly) return;
   const w = toWorld(e.clientX, e.clientY);
   const hit = topHit(w);
   if (hit?.type === 'cover') toggleCover(hit);
@@ -2208,6 +2256,7 @@ function fitTextarea(ta) {
 
 // Yorum dizisini tek geri alma adımıyla değiştirir.
 function setComments(el, comments, resolved) {
+  if (roBlocked()) return;
   checkpoint();
   if (comments.length) el.comments = comments;
   else delete el.comments;
@@ -3770,15 +3819,73 @@ function duplicateSelection() {
   insertCopies(sel.map(withoutComments), { x: d, y: d });
 }
 
+// ---------- Salt okunur tahta ----------
+// board.readOnly açıkken tahtada hiçbir değişiklik yapılamaz: yalnızca kaydırma, yakınlaştırma
+// ve lazer işaretçi çalışır. Bayrak tahta dosyasına kaydedilir, tahta her açılışta böyle açılır.
+
+const RO_TOOLS = ['hand', 'laser'];
+// Salt okunurda da çalışan eylemler (yalnızca görünümü değiştirenler).
+const RO_ACTIONS = ['zoomIn', 'zoomOut', 'zoomReset', 'zoomFit', 'menu', 'gallery', 'readOnly'];
+let roPrevTool = null; // salt okunura geçmeden önceki araç; çıkınca geri seçilir
+
+function applyReadOnly() {
+  const ro = !!board.readOnly;
+  document.body.classList.toggle('readonly', ro);
+  $('#roToggle').classList.toggle('active', ro);
+  if (ro) {
+    if (embedLive.id) closeEmbed();
+    selection.clear();
+    compass = null;
+    fnEdit = null;
+    ruler = null;
+    protractor = null;
+    $('[data-action="ruler"]').classList.remove('active');
+    $('[data-action="protractor"]').classList.remove('active');
+    if (!RO_TOOLS.includes(tool)) {
+      roPrevTool = tool;
+      setTool('hand');
+    }
+  } else if (roPrevTool) {
+    const prev = roPrevTool;
+    roPrevTool = null;
+    if (RO_TOOLS.includes(tool) && toolUsable(prev)) setTool(prev);
+  }
+  updateProps();
+  requestRender();
+}
+
+function toggleReadOnly() {
+  commitEditor();
+  cancelCrop();
+  if (board.readOnly) delete board.readOnly;
+  else board.readOnly = true;
+  applyReadOnly();
+  changed();
+  toast(board.readOnly ? t('Salt okunur: yalnızca kaydırma ve lazer işaretçi kullanılabilir') : t('Salt okunur kapatıldı; tahta düzenlenebilir'));
+}
+
+// Salt okunurda engellenen bir şey denenince kısa bir uyarı gösterir; true dönerse işlem yapılmaz.
+function roBlocked() {
+  if (!board.readOnly) return false;
+  toast(t('Tahta salt okunur — düzenlemek için sol üstteki kilidi aç'));
+  return true;
+}
+
+$('#roBar').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b?.dataset.tool) setTool(b.dataset.tool);
+});
+
 // ---------- Araç çubuğu ----------
 
 function setTool(t) {
+  if (board.readOnly && !RO_TOOLS.includes(t)) return;
   commitEditor();
   cancelCrop();
   tool = t;
   if (t !== 'select') selection.clear();
   pickInGroup(t);
-  document.querySelectorAll('#toolbar [data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
+  document.querySelectorAll('#toolbar [data-tool], #roBar [data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
   savePrefs();
   updateCursor();
   updateProps();
@@ -3917,7 +4024,9 @@ $('#filebar').addEventListener('click', (e) => {
 });
 
 function runAction(a) {
+  if (!RO_ACTIONS.includes(a) && roBlocked()) return;
   if (STUDENT_TARGETS.includes(a) && !studentOnly()) return;
+  if (disabledTools.has(a)) return;
   pickInGroup(a);
   switch (a) {
     case 'undo': return undo();
@@ -3930,6 +4039,7 @@ function runAction(a) {
     case 'zoomFit': return zoomFit();
     case 'menu': return toggleMenu();
     case 'gallery': return handleCommand('gallery');
+    case 'readOnly': return toggleReadOnly();
     case 'ruler':
       ruler = ruler ? null : createRuler(innerWidth / 2, innerHeight / 2);
       $('[data-action="ruler"]').classList.toggle('active', !!ruler);
@@ -3941,6 +4051,7 @@ function runAction(a) {
     case 'axes': return insertAxes();
     case 'table': return insertTable();
     case 'template': return openTemplates();
+    case 'periodic': return insertPeriodic();
     case 'link': return insertLink();
     case 'embed': return insertEmbed();
     case 'webImage': return searchWebImages();
@@ -4527,6 +4638,8 @@ $('#menu').addEventListener('click', (e) => {
     setStudentMode(!studentMode);
   } else if ('commentsToggle' in b.dataset) {
     setShowComments(!showComments);
+  } else if ((b.dataset.bg || b.dataset.bgColor) && roBlocked()) {
+    return;
   } else if (b.dataset.bg) {
     board.background = b.dataset.bg;
     updateBgUI();
@@ -4576,14 +4689,14 @@ async function installUpdate() {
 
 // Özel arka plan rengi: sürüklerken canlı önizleme, bırakınca kaydet
 $('#menu').addEventListener('input', (e) => {
-  if (e.target.id !== 'bgCustomColor') return;
+  if (e.target.id !== 'bgCustomColor' || board.readOnly) return;
   board.bgColor = e.target.value;
   document.body.style.background = board.bgColor;
   sceneCacheValid = false;
   requestRender();
 });
 $('#menu').addEventListener('change', (e) => {
-  if (e.target.id !== 'bgCustomColor') return;
+  if (e.target.id !== 'bgCustomColor' || board.readOnly) return;
   board.bgColor = e.target.value;
   updateBgUI();
   changed();
@@ -4602,6 +4715,7 @@ function updateBgUI() {
 async function handleCommand(cmd) {
   commitEditor();
   if ((STUDENT_COMMANDS.includes(cmd) || STUDENT_TARGETS.includes(cmd)) && !studentOnly()) return;
+  if (disabledTools.has(cmd)) return;
   switch (cmd) {
     case 'new':
       if (!(await leaveBoard())) return;
@@ -4646,6 +4760,7 @@ async function handleCommand(cmd) {
     case 'print':
       return exportPages('print');
     case 'unlockAll':
+      if (roBlocked()) return;
       return unlockAll();
     case 'coversHide':
       return setAllCovers(false);
@@ -4661,6 +4776,7 @@ async function handleCommand(cmd) {
     case 'createVault':
       return createVault();
     case 'clear':
+      if (roBlocked()) return;
       if (board.elements.length && confirm(t('Tahtadaki her şey silinsin mi? (Ctrl+Z ile geri alınabilir)'))) {
         checkpoint();
         board.elements = [];
@@ -4671,6 +4787,7 @@ async function handleCommand(cmd) {
     case 'help':
       return helpOpen() ? closeHelp() : openHelp();
     case 'obsidianRefreshAll':
+      if (roBlocked()) return;
       return refreshObsidian(board.elements);
     case 'installUpdate':
       return installUpdate();
@@ -4759,7 +4876,7 @@ const kbd = (k) => `<kbd>${k}</kbd>`;
 let capturing = null;
 
 function buildHelpKeys() {
-  $('#helpToolKeys').innerHTML = SHORTCUTS.filter((s) => studentMode || !STUDENT_TARGETS.includes(s.target)).map((s) => {
+  $('#helpToolKeys').innerHTML = SHORTCUTS.filter((s) => toolUsable(s.target)).map((s) => {
     const keys = SLOTS.filter((slot) => s[slot]).map((slot) => {
       const on = capturing && capturing.target === s.target && capturing.slot === slot;
       return `<button class="keychip${on ? ' capturing' : ''}" data-target="${s.target}" data-slot="${slot}" ` +
@@ -4833,6 +4950,66 @@ $('#helpResetKeys').addEventListener('click', () => {
 // ---------- Rehber: güncellemeleri denetle sekmesi ----------
 // Menüdeki güncelleme ayarlarının aynısı. Denetim buradan sessiz yapılır: menüdeki gibi pencere
 // açılmaz, sonuç sekmedeki durum satırına yazılır (indirme bitince kurulum sorusu yine açılır).
+// Araçlar sekmesi: araç çubuğundaki sırayla her araç ve grup için bir onay kutusu. Grubun kutusu
+// bütün üyelerini birlikte açar / kapatır; üyeleri kısmen açıksa yarı işaretli görünür.
+const toolLabel = (b) => (baseTitles.get(b) || b.title).split(' — ')[0].replace(/\s*\([^)]*\)$/, '');
+
+function buildHelpTools() {
+  const row = (b, sub) => {
+    const target = targetOf(b);
+    const fixed = ALWAYS_ON.includes(target);
+    const note = fixed ? t('her zaman açık') : STUDENT_TARGETS.includes(target) ? t('Öğrenci modu') : '';
+    return `<label class="tt-row${sub ? ' sub' : ''}"><input type="checkbox" data-tt="${target}"${disabledTools.has(target) ? '' : ' checked'}${fixed ? ' disabled' : ''} />` +
+      `${b.querySelector('svg').outerHTML}<span>${escHtml(toolLabel(b))}</span>${note ? `<span class="muted">${note}</span>` : ''}</label>`;
+  };
+  const blocks = [];
+  let loose = null; // gruba girmeyen ardışık düğmeler tek blokta
+  for (const el of $('#toolbar').children) {
+    const grp = toolGroups.find((g) => g.el === el);
+    if (grp) {
+      loose = null;
+      blocks.push(`<div class="tt-block"><label class="tt-row tt-group"><input type="checkbox" data-tt-group="${grp.name}" />` +
+        `<span>${escHtml(grp.el.dataset.title)}</span></label>${grp.members.map((m) => row(m, true)).join('')}</div>`);
+    } else if (el.matches('button.tool')) {
+      if (!loose) blocks.push((loose = []));
+      loose.push(row(el, false));
+    }
+  }
+  $('#helpToolList').innerHTML = blocks.map((b) => (Array.isArray(b) ? `<div class="tt-block">${b.join('')}</div>` : b)).join('');
+  for (const grp of toolGroups) {
+    const own = grp.members.map(targetOf).filter((x) => !ALWAYS_ON.includes(x));
+    const on = own.filter((x) => !disabledTools.has(x)).length;
+    const box = $(`#helpToolList [data-tt-group="${grp.name}"]`);
+    box.checked = on > 0;
+    box.indeterminate = on > 0 && on < own.length;
+  }
+}
+
+function applyDisabledTools() {
+  savePrefs();
+  refreshToolbar();
+  buildHelpKeys();
+  buildHelpTools();
+}
+
+$('#helpToolList').addEventListener('change', (e) => {
+  const box = e.target;
+  const grp = toolGroups.find((g) => g.name === box.dataset.ttGroup);
+  const targets = grp ? grp.members.map(targetOf) : [box.dataset.tt];
+  for (const x of targets) {
+    if (ALWAYS_ON.includes(x)) continue;
+    if (box.checked) disabledTools.delete(x);
+    else disabledTools.add(x);
+  }
+  applyDisabledTools();
+});
+
+$('#helpToolsReset').addEventListener('click', () => {
+  disabledTools.clear();
+  applyDisabledTools();
+});
+buildHelpTools();
+
 const helpAutoUpdate = $('#helpAutoUpdate');
 const helpCheckUpdate = $('#helpCheckUpdate');
 const helpUpdateState = $('#helpUpdateState');
@@ -4840,12 +5017,12 @@ const helpUpdateVersion = $('#helpUpdateVersion');
 let updateInfo = { version: '', auto: true, packaged: true, state: 'idle' };
 
 function updateStateText(info) {
-  if (!info.packaged) return t('Geliştirme modunda güncelleme denetlenmez.');
   if (info.state === 'checking') return t('Denetleniyor…');
   if (info.state === 'downloading') return t('İndiriliyor… %{yuzde}', { yuzde: Math.round(info.percent || 0) });
   if (info.state === 'ready') return t('Sürüm {surum} indirildi; uygulama yeniden başlatılınca kurulacak.', { surum: info.readyVersion });
   if (info.result === 'uptodate') return t('Beyaz Tahta güncel.');
   if (info.result === 'error') return t('Denetlenemedi: {hata}', { hata: info.error || '—' });
+  if (!info.packaged) return t('Geliştirme modunda güncelleme denetlenmez.');
   return '';
 }
 
@@ -4954,9 +5131,9 @@ function overlayOpen() {
   return galleryOpen() || modalOpen();
 }
 
-// Tahtanın üstündeki pencerelerden biri (Obsidian seçicisi, PDF, dışa aktarma, metin sorma, şablon) açık mı.
+// Tahtanın üstündeki pencerelerden biri (Obsidian seçicisi, periyodik tablo, PDF, dışa aktarma, metin sorma, şablon) açık mı.
 function modalOpen() {
-  return obsidianPickerOpen() || pdfDialogOpen() || exportDialogOpen() || askDialogOpen() || templateDialogOpen();
+  return obsidianPickerOpen() || periodicPickerOpen() || pdfDialogOpen() || exportDialogOpen() || askDialogOpen() || templateDialogOpen();
 }
 
 async function openGallery() {
@@ -5631,6 +5808,38 @@ async function placeImages(list, at) {
   changed();
 }
 
+// ---------- Periyodik tablo ----------
+
+// Tablo ya da element kartları sıradan resim olarak ekranın ortasına eklenir; kartlar altışar yan yana dizilir.
+async function insertPeriodic() {
+  commitEditor();
+  const res = await openPeriodicPicker();
+  if (!res) return;
+  const z = board.view.zoom;
+  const c = toWorld(innerWidth / 2, innerHeight / 2);
+  const gap = 24;
+  const cols = Math.min(6, res.images.length);
+  const { w, h } = res.images[0];
+  const rows = Math.ceil(res.images.length / cols);
+  const totalW = cols * w + (cols - 1) * gap, totalH = rows * h + (rows - 1) * gap;
+  // Ekranda kendi boyutunda görünür; sığmayacaksa küçültülür.
+  const k = Math.min(1 / z, (innerWidth * 0.9) / z / totalW, (innerHeight * 0.85) / z / totalH);
+  const created = res.images.map((img, i) => ({
+    id: newId(), type: 'image', src: img.src,
+    x: c.x - (totalW * k) / 2 + (i % cols) * (w + gap) * k,
+    y: c.y - (totalH * k) / 2 + Math.floor(i / cols) * (h + gap) * k,
+    w: img.w * k, h: img.h * k,
+  }));
+  checkpoint();
+  board.elements.push(...created);
+  setTool('select');
+  selection = new Set(created.map((el) => el.id));
+  changed();
+  toast(res.kind === 'table'
+    ? t('Periyodik tablo eklendi — yakınlaştırınca ayrıntılar netleşir')
+    : t('{n} element kartı eklendi', { n: created.length }));
+}
+
 // ---------- Obsidian ----------
 
 // Obsidian notundan seçilen bölüm resim olarak eklenir; "obsidian" alanı kaynağı hatırlar
@@ -5704,7 +5913,7 @@ document.addEventListener('drop', (e) => {
     if (p) openBoardPath(p);
     return;
   }
-  if (overlayOpen()) return;
+  if (overlayOpen() || roBlocked()) return;
   const at = toWorld(e.clientX, e.clientY);
   if (e.dataTransfer?.files.length) return insertImageFiles(e.dataTransfer.files, at);
   // Tarayıcıdan sürüklenen resim ya da bağlantı: resim indirilir, sayfa bağlantısı kart olur.
@@ -5730,7 +5939,7 @@ document.addEventListener('copy', (e) => {
 });
 
 document.addEventListener('cut', (e) => {
-  if (editing || isTyping(e) || !selection.size || overlayOpen()) return;
+  if (editing || isTyping(e) || !selection.size || overlayOpen() || board.readOnly) return;
   const sel = selectedEls();
   e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel));
   e.preventDefault();
@@ -5739,6 +5948,7 @@ document.addEventListener('cut', (e) => {
 
 document.addEventListener('paste', (e) => {
   if (editing || isTyping(e) || overlayOpen()) return;
+  if (roBlocked()) return e.preventDefault();
   const dt = e.clipboardData;
   e.preventDefault();
   const at = pointer ? toWorld(pointer.x, pointer.y) : toWorld(innerWidth / 2, innerHeight / 2);
@@ -5828,6 +6038,18 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Salt okunurda tahtayı değiştiren tuşlar yutulur; arama, kopyalama, menü kısayolları
+  // (kaydet, yakınlaştır…) ve kaydırma/lazer tuşları çalışır.
+  if (board.readOnly) {
+    const blocked = mod ? ['z', 'y', 'a', 'd', 'b', 'i', 'u', 'm', 'l', 'x'].includes(k) || (k === 'g' && e.shiftKey)
+      : e.altKey || ['Delete', 'Backspace', '[', ']'].includes(e.key) || e.key.startsWith('Arrow')
+        || (KEYMAP.has(k) && !RO_TOOLS.includes(KEYMAP.get(k)));
+    if (blocked) {
+      e.preventDefault();
+      return;
+    }
+  }
+
   if (mod) {
     if (k === 'f') { e.preventDefault(); openSearch(); }
     else if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
@@ -5883,7 +6105,7 @@ window.addEventListener('keydown', (e) => {
     changed();
   } else if (e.key === ']') arrange('front');
   else if (e.key === '[') arrange('back');
-  else if (!e.altKey && KEYMAP.has(k) && (studentMode || !STUDENT_TARGETS.includes(KEYMAP.get(k)))) {
+  else if (!e.altKey && KEYMAP.has(k) && toolUsable(KEYMAP.get(k))) {
     const target = KEYMAP.get(k);
     // Eylemin açtığı pencere (ör. Obsidian seçicisinin arama kutusu) tuşun harfini almasın.
     e.preventDefault();

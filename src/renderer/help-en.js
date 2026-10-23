@@ -269,6 +269,15 @@ export const HELP_EN = {
       <li><kbd>Ctrl+Z</kbd> removes the template again.</li>
     </ul>
 
+    <h3>Periodic table</h3>
+    <p>Press <b>Periodic table</b> in the Insert group. The window shows all 118 elements colored by category; the detailed card of the element under the pointer appears in the gap in the middle of the table.</p>
+    <ul>
+      <li><b>Insert table</b>: puts the whole table on the board as one image. Cells show the atomic number, symbol, name, atomic mass, electronegativity and electrons per shell; groups are labeled both 1–18 and 1A–8A. Choose what is shown with the <b>Show in table</b> boxes at the bottom.</li>
+      <li><b>Element cards</b>: click elements to pick them and press <b>Insert selected cards</b> (or double-click an element). A card shows the group, period, block, electron configuration, shells, electronegativity, state at 25 °C, melting and boiling points and a Bohr model.</li>
+      <li>Type a name, symbol or atomic number in the box at the top to find an element; <kbd>Enter</kbd> picks the first match. Hovering a category name at the bottom highlights its elements.</li>
+      <li>What you insert is an ordinary image: move it, resize it, write on it, or crop it to keep part of the table. It stays sharp when you zoom in.</li>
+    </ul>
+
     <h3>Inserting PDFs</h3>
     <p>Choose the PDF with the image button or drag it onto the window. <b>Each page is inserted as a separate image</b>, one below the other; you can take notes on them with the pen.</p>
     <p>For multi-page PDFs you are asked which pages to insert: <b>All pages</b>, a list like <code>1-5, 8, 11-13</code> in the <b>Pages</b> box (<code>11-</code> means from page 11 to the end), or <b>a number of pages starting from a page</b> (e.g. starting at page 12, 4 pages → 12-15). Inserting many pages can take a while.</p>
@@ -322,6 +331,15 @@ export const HELP_EN = {
       <li><b>Save as…</b> (<kbd>Ctrl+Shift+S</kbd>): writes a copy of the board wherever you want.</li>
       <li><b>Show file location</b>: shows the open board's file in Explorer.</li>
       <li>Double-clicking a .tahta file in Explorer also opens it in Whiteboard.</li>
+    </ul>
+
+    <h3>Read-only board</h3>
+    <p>The <b>lock</b> button at the top left makes the board read-only; "Read-only" appears next to it. The setting is saved with the board, so it opens read-only every time.</p>
+    <ul>
+      <li>Nothing can be added, deleted, moved or changed; undo, paste, drag and drop and background changes are off too.</li>
+      <li>Only <b>Pan</b> and the <b>Laser pointer</b> remain on the toolbar. You can zoom with the wheel, two fingers or the buttons at the bottom right, and search with <kbd>Ctrl+F</kbd>.</li>
+      <li>Comments can be read, but new ones cannot be written.</li>
+      <li>Click the lock again to go back to editing; the tool you used before is selected again.</li>
     </ul>
 
     <h3>Using several devices</h3>
@@ -454,6 +472,13 @@ export const HELP_EN = {
 
     <h3>I deleted something by accident</h3>
     <p><kbd>Ctrl+Z</kbd>. Everything can be undone, including clearing the board. The undo history is reset after closing and reopening the board.</p>
+  `,
+
+  tools: `
+    <h3>Turn tools on / off</h3>
+    <p>Uncheck a tool you don't use: it is removed from the toolbar, its group menu and the shortcuts. A group's box turns all tools in the group on / off together; a group whose tools are all off is hidden too. Objects on the board stay where they are and can still be edited; you can turn the tool back on here at any time. The Select tool is always on.</p>
+    <p><button id="helpToolsReset" class="keyreset">Turn all tools on</button></p>
+    <div id="helpToolList"></div>
   `,
 
   update: `

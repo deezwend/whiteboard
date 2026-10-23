@@ -19,6 +19,7 @@ let percent = 0; // indirme yüzdesi (rehberdeki durum satırı için)
 let result = null; // son denetimin sonucu: 'uptodate' | 'error'
 let errorText = '';
 let lastProgressNotify = 0;
+let enabled = () => true; // ayarlardaki "otomatik denetle" seçeneği
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -37,7 +38,7 @@ function setProgress(p) {
 // Rehberdeki "Güncellemeleri denetle" sekmesi durumu buradan okur. Sekme kapalıyken gönderilen
 // olaylar kaybolur; sekme açılınca 'update:info' ile son durum bir bütün olarak alınır.
 function status() {
-  return { state, readyVersion, percent, result, error: errorText };
+  return { state, readyVersion, percent, result, error: errorText, auto: enabled() };
 }
 
 function notify() {
@@ -156,10 +157,11 @@ function install() {
 function init(opts) {
   getWin = opts.getWin;
   send = opts.send;
+  enabled = opts.isEnabled;
   if (!app.isPackaged) return;
-  const auto = () => { if (opts.isEnabled()) check(false); };
+  const auto = () => { if (enabled()) check(false); };
   setTimeout(auto, FIRST_CHECK_DELAY);
   setInterval(auto, CHECK_INTERVAL);
 }
 
-module.exports = { init, check, install, status };
+module.exports = { init, check, install, status, refresh: notify };

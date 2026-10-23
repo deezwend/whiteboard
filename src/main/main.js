@@ -997,13 +997,13 @@ ipcMain.on('update:install', () => updater.install());
 // oradan sessizce yapılır; sonuç pencere (dialog) yerine sekmedeki durum satırında yazılır.
 ipcMain.handle('update:info', () => ({
   version: app.getVersion(),
-  auto: autoUpdateEnabled(),
   packaged: app.isPackaged,
-  ...updater.status(),
+  ...updater.status(), // durum, sürüm ve "otomatik denetle" ayarı
 }));
 ipcMain.handle('update:auto', (_e, on) => {
   writeSettings({ autoUpdate: !!on });
   buildMenu(); // menüdeki onay imi sekmeyle aynı kalsın
+  updater.refresh();
   return autoUpdateEnabled();
 });
 ipcMain.on('update:check', () => updater.check(true, true));
@@ -1068,7 +1068,10 @@ function buildMenu() {
           label: L('Güncellemeleri otomatik denetle'),
           type: 'checkbox',
           checked: autoUpdateEnabled(),
-          click: (item) => writeSettings({ autoUpdate: item.checked }),
+          click: (item) => {
+            writeSettings({ autoUpdate: item.checked });
+            updater.refresh(); // rehberdeki sekmedeki onay kutusu da aynı kalsın
+          },
         },
         { label: L('Sürüm {surum}', { surum: app.getVersion() }), enabled: false },
       ],

@@ -78,6 +78,8 @@ html, body {
 .hidden { display: none !important; }
 /* Öğrenci modu kapalıyken öğrenci araçları gizlenir */
 body:not(.student) .student-only { display: none !important; }
+/* Rehberin Araçlar sekmesinde kapatılan araçlar */
+#toolbar .tool-off { display: none !important; }
 
 /* ----- Araç çubuğu ----- */
 #toolbar {
@@ -379,6 +381,19 @@ body:not(.student) .student-only { display: none !important; }
   padding: 5px 12px 5px 5px;
 }
 #saveState { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+/* ----- Salt okunur tahta ----- */
+#roToggle .ro-closed, body.readonly #roToggle .ro-open { display: none; }
+body.readonly #roToggle .ro-closed { display: inline; }
+#roBadge { display: none; font-size: 12px; font-weight: 600; color: var(--active-fg); background: var(--active); padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+body.readonly #roBadge { display: inline; }
+#roBar { display: none; top: 12px; left: 50%; transform: translateX(-50%); gap: 2px; padding: 5px; }
+body.readonly #roBar { display: flex; }
+body.readonly #toolbar,
+body.readonly .ro-hide,
+body.readonly #commentPop .cp-compose,
+body.readonly #commentPop [data-comment="resolve"],
+body.readonly #commentPop .comment-actions { display: none !important; }
 
 #menu {
   top: 62px;
@@ -702,6 +717,20 @@ kbd {
 }
 #helpContent .keyreset:hover, #helpContent .helpbtn:hover { border-color: var(--active); }
 #helpContent .helpbtn:disabled { opacity: 0.45; cursor: default; border-color: var(--panel-border); }
+#helpToolList { columns: 2 240px; column-gap: 28px; margin-top: 12px; }
+#helpToolList .tt-block { break-inside: avoid; margin-bottom: 12px; }
+#helpToolList .tt-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+#helpToolList .tt-row.sub { padding-left: 24px; }
+#helpToolList .tt-group { font-weight: 600; }
+#helpToolList input { margin: 0; }
+#helpToolList input:disabled { cursor: default; }
+#helpToolList svg {
+  flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+#helpToolList svg .accent { stroke: #f2c200; stroke-width: 3; }
+#helpToolList svg .laser { fill: #ff3b3b; stroke: #ff3b3b; }
+#helpToolList .tt-row:has(input:not(:checked)) svg { opacity: 0.35; }
 #helpContent .hit { background: var(--active); border-radius: 4px; box-shadow: -4px 0 0 var(--active); }
 @media (max-width: 760px) {
   .help-body { flex-direction: column; }
