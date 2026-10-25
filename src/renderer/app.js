@@ -2042,7 +2042,15 @@ function updateDraw(e, events) {
     const a = el.points[drag.anchor];
     const end = snapStraight({ x: a[0], y: a[1] }, toWorld(e.clientX, e.clientY), 45, false);
     el.points.length = drag.anchor + 1;
-    el.points.push([end.x, end.y, e.pressure !== undefined ? pressureOf(e) : a[2]]);
+    // Düz parça ara noktalarla doldurulur: fırça efektleri (kalınlık, renk geçişi) nokta
+    // aralığına bakar; yalnız iki uç nokta olsa çizgi incecik ve efektsiz kalırdı.
+    const p1 = e.pressure !== undefined ? pressureOf(e) : a[2];
+    const len = Math.hypot(end.x - a[0], end.y - a[1]);
+    const n = Math.max(1, Math.min(2000, Math.ceil(len / (3 / board.view.zoom))));
+    for (let i = 1; i <= n; i++) {
+      const k = i / n;
+      el.points.push([a[0] + (end.x - a[0]) * k, a[1] + (end.y - a[1]) * k, a[2] + (p1 - a[2]) * k]);
+    }
     return;
   }
   drag.straight = false;
