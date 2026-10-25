@@ -5,7 +5,7 @@ import {
 } from './geometry.js';
 import {
   drawElement, drawBackground, measureText, wrappedHeight, listIndent, setImageLoadCallback, revealedCovers, renderOpts, getImage,
-  LINK_SIZE,
+  LINK_SIZE, mindPad, mindTextColor, mindBadge, mindOutAnchor, MIND_MAX_W, mindShape as mindShapeOf, mindFill as mindFillOf,
 } from './render.js';
 import { recognizeShape, shapeToPoints } from './recognize.js';
 import { findRegion, isBoundary, shapeArea } from './fill.js';
@@ -15,6 +15,11 @@ import { compileFunction, functionLabel } from './mathexpr.js';
 import { openObsidianPicker } from './obsidian-picker.js';
 import { openPeriodicPicker, periodicPickerOpen } from './periodic.js';
 import { embedFor, createLiveEmbed } from './embed.js';
+import {
+  isMind, mindIndex, rootOf, subtree, childDir, layoutMindMaps, makeRoot, addChild, addSibling, reparent, promote,
+  shiftOrder, detach, dropReorder, navigate, parseOutline, buildFromOutline, toOutline, flatten, ROOT_COLOR, BRANCH_COLORS,
+  placeFree, resetPlacement, hasPlacement,
+} from './mindmap.js';
 import { t, lang, locale } from './i18n.js';
 
 const api = window.api;
@@ -126,7 +131,7 @@ const GUIDE_COLOR = '#e8368f'; // taşırken çıkan hizalama kılavuzları
 const SNAP_PX = 6; // kılavuzun yapıştığı uzaklık (ekran pikseli)
 // Metin biçimi alanları (yazı, not ve tablo öğelerinde; yalnızca varsayılandan farklıysa yazılır).
 const FMT_PROPS = ['bold', 'italic', 'underline', 'align', 'list'];
-const TEXT_TYPES = ['text', 'note', 'table'];
+const TEXT_TYPES = ['text', 'note', 'table', 'mindnode'];
 // Çıkartma aracının emojileri.
 const STICKERS = ['👍', '👎', '❤️', '⭐', '🔥', '🎉', '✅', '❌', '❓', '❗', '💡', '📌', '🎯', '🏆', '⚠️', '💯',
   '😀', '😂', '😍', '😮', '😢', '😡', '🤔', '👏', '🙌', '💪', '👀', '🚀', '⏰', '📅', '📝', '📚'];
@@ -148,7 +153,7 @@ const SHORTCUTS = [
   { target: 'laser', key: 'w' },
   { target: 'eraser', key: 'e', num: '5' },
   { target: 'bucket', key: 'z' },
-  { target: 'ruler', key: 'r', num: '6', alt: 'u' },
+  { target: 'ruler', key: 'r', num: '6' },
   { target: 'protractor', key: 'q' },
   { target: 'rect', key: 'd', num: '7' },
   { target: 'ellipse', key: 'o', num: '8' },
@@ -162,12 +167,13 @@ const SHORTCUTS = [
   { target: 'image', key: 'i' },
   { target: 'obsidian', key: 'b' },
   { target: 'table', key: 'y' },
+  { target: 'mindmap', key: 'u' },
   { target: 'template', key: 'j' },
   { target: 'link', key: 'f' },
   { target: 'axes', key: 'x' },
 ];
 // Bunlar birer araç değil eylemdir; kısayol da bunları runAction'a yönlendirir.
-const ACTION_TARGETS = ['ruler', 'protractor', 'image', 'obsidian', 'axes', 'table', 'template', 'link'];
+const ACTION_TARGETS = ['ruler', 'protractor', 'image', 'obsidian', 'axes', 'table', 'mindmap', 'template', 'link'];
 // Yalnızca Öğrenci modu açıkken kullanılabilen araçlar ve komutlar.
 const STUDENT_TARGETS = ['protractor', 'compass', 'cover', 'axes'];
 const STUDENT_COMMANDS = ['exportPdf', 'print', 'unlockAll', 'coversHide', 'coversShow'];
@@ -545,6 +551,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 function changed(save = true) {
+  layoutMindMaps(board.elements);
   syncMath();
   if (search) runSearch(false);
   requestRender();
@@ -798,6 +805,7 @@ function drawOverlay() {
   }
 
   if (drag?.kind === 'move' && drag.guides) drawGuides(drag.guides);
+  drawMindOverlay();
   if (ruler) drawRuler(ctx, ruler);
   if (protractor) drawProtractor(ctx, protractor);
   if (activeTool() === 'compass') drawCompass();
@@ -1019,13 +1027,17 @@ function arrangeGrid(units, all, move) {
 
 // Taşıma başında: taşınan nesnelerin ilk hâlleri ve yapışılabilecek diğer nesnelerin (ekrandakiler) kutuları.
 function startMoveSnap() {
-  const moving = selectedEls().filter((el) => !el.locked);
+  const moving = withSubtrees(selectedEls()).filter((el) => !el.locked);
   drag.orig = new Map(moving.map((el) => [el, { ...el }]));
+  drag.ids = new Set(moving.map((el) => el.id));
+  // Tek düğüm (dalıyla) sürüklenince bırakıldığı yere göre başka düğümün altına ya da kardeşleri arasına geçer.
+  const m = selectedMind();
+  drag.mind = m ? { node: m, target: null } : null;
   drag.b0 = unionBBox(moving);
   const a = toWorld(0, 0), z = toWorld(innerWidth, innerHeight);
   const view = { x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y };
   drag.targets = board.elements
-    .filter((el) => !selection.has(el.id))
+    .filter((el) => !drag.ids.has(el.id))
     .map(bbox)
     .filter((b) => rectsIntersect(b, view))
     .slice(-400);
@@ -1065,7 +1077,8 @@ function isSingleLine(sel) {
 
 function handlePositions() {
   const sel = selectedEls();
-  if (!sel.length || crop || sel.some((el) => el.locked)) return {};
+  // Mind map düğümlerinin boyutu yazılarından gelir; boyutlandırma ve döndürme tutamağı yoktur.
+  if (!sel.length || crop || sel.some((el) => el.locked || isMind(el))) return {};
   if (isSingleLine(sel)) {
     const el = sel[0];
     return { p1: toScreen(el.x1, el.y1), p2: toScreen(el.x2, el.y2) };
@@ -1131,6 +1144,343 @@ function setAllCovers(show) {
   if (!covers.length) return toast(t('Tahtada gizleme bandı yok'));
   for (const el of covers) toggleCover(el, show);
   toast(show ? t('Bütün bantlar açıldı') : t('Bütün bantlar kapatıldı'));
+}
+
+// ---------- Mind map ----------
+// Düğümler klavyeyle büyütülür: Tab alt dal, Enter kardeş ekler ve yeni düğümde hemen yazmaya
+// geçilir. Yerleşim mindmap.js'tedir ve her değişiklikte (changed) kendiliğinden yenilenir.
+
+const MIND_COLORS = [ROOT_COLOR, ...BRANCH_COLORS];
+const MIND_BTN_R = 9; // düğümün yanındaki "+" düğmesinin yarıçapı (ekran pikseli)
+
+// Seçimdeki düğümlere alt dalları da eklenir: dal taşınırken, kopyalanırken, silinirken bütün kalır.
+function withSubtrees(els) {
+  if (!els.some(isMind)) return els;
+  const idx = mindIndex(board.elements);
+  const ids = new Set(els.map((el) => el.id));
+  for (const el of els) if (isMind(el)) for (const d of subtree(idx, el)) ids.add(d.id);
+  return board.elements.filter((el) => ids.has(el.id));
+}
+
+function selectedMind() {
+  const sel = selectedEls();
+  return sel.length === 1 && isMind(sel[0]) && !sel[0].locked ? sel[0] : null;
+}
+
+function selectNode(n) {
+  selection = new Set([n.id]);
+  revealNode(n);
+  updateProps();
+  requestRender();
+}
+
+// Klavyeyle yeni düğüme geçince ekranın dışında kaldıysa görünüm kaydırılır.
+function revealNode(n) {
+  const r = screenRect(n);
+  const mx = 60, top = 130, bottom = 70;
+  let dx = 0, dy = 0;
+  if (r.x < mx) dx = mx - r.x;
+  else if (r.x + r.w > innerWidth - mx) dx = Math.max(mx - r.x, innerWidth - mx - r.x - r.w);
+  if (r.y < top) dy = top - r.y;
+  else if (r.y + r.h > innerHeight - bottom) dy = Math.max(top - r.y, innerHeight - bottom - r.y - r.h);
+  if (!dx && !dy) return;
+  board.view.x += dx;
+  board.view.y += dy;
+  scheduleViewSave();
+}
+
+// Yeni düğümü ekleyip hemen yazmaya geçer. make, geri alma noktasından sonra çağrılır (kardeşlerin sırası kayar).
+function insertMindNode(make) {
+  commitEditor();
+  checkpoint();
+  const n = make();
+  if (!n) {
+    undoStack.pop();
+    updateUndoButtons();
+    return;
+  }
+  board.elements.push(n);
+  if (tool !== 'select') setTool('select');
+  layoutMindMaps(board.elements);
+  revealNode(n);
+  openEditor(n, true);
+}
+
+function insertMindMap() {
+  commitEditor();
+  const c = toWorld(innerWidth / 2, innerHeight / 2);
+  checkpoint();
+  const root = makeRoot(c.x, c.y);
+  board.elements.push(root);
+  setTool('select');
+  openEditor(root, true);
+  toast(t('Mind map: ana fikri yaz — Tab alt dal, Enter kardeş ekler'), 4000);
+}
+
+const mindAddChild = (n, side) => insertMindNode(() => addChild(board.elements, n, side));
+const mindAddSibling = (n, before = false) => insertMindNode(() => addSibling(board.elements, n, before));
+
+// Ağaç yapısını değiştiren işlemler: op(board.elements) false dönerse geri alma noktası geri alınır.
+function mindEdit(n, op) {
+  checkpoint();
+  if (op(board.elements) === false) {
+    undoStack.pop();
+    updateUndoButtons();
+    return;
+  }
+  changed();
+  if (n) selectNode(n);
+}
+
+function toggleCollapse(n) {
+  if (!n.nkids && !n.collapsed) return;
+  mindEdit(n, () => {
+    if (n.collapsed) delete n.collapsed;
+    else n.collapsed = true;
+  });
+}
+
+// Seçili düğümlerin bulunduğu mind map'lerin kökleri.
+function selectedMindRoots() {
+  const idx = mindIndex(board.elements);
+  return [...new Set(selectedEls().filter(isMind).map((n) => rootOf(idx, n)))];
+}
+
+function setMindProp(prop, value) {
+  const nodes = selectedEls().filter(isMind);
+  if (!nodes.length) return;
+  checkpoint();
+  // Düzen değişince elle verilen konumlar yeni düzende anlamsız kalır; silinir.
+  if (prop === 'layout') for (const r of selectedMindRoots()) {
+    r.layout = value;
+    resetPlacement(board.elements, [r]);
+  }
+  else for (const n of nodes) n[prop] = value;
+  changed();
+}
+
+function copyOutline(n) {
+  const text = toOutline(board.elements, n);
+  navigator.clipboard.writeText(text)
+    .then(() => toast(t('Ana hat panoya kopyalandı (Markdown)')))
+    .catch(() => toast(t('Panoya kopyalanamadı')));
+}
+
+// Seçili mind map'leri sıradan nesnelere (şekil, yazı, kavisli çizgi) çevirir; daraltılmış dallar önce açılır.
+function flattenMind() {
+  const roots = selectedMindRoots();
+  if (!roots.length) return;
+  checkpoint();
+  let idx = mindIndex(board.elements);
+  for (const r of roots) for (const n of subtree(idx, r)) delete n.collapsed;
+  layoutMindMaps(board.elements);
+  idx = mindIndex(board.elements);
+  const nodes = roots.flatMap((r) => subtree(idx, r));
+  const doomed = new Set(nodes.map((n) => n.id));
+  const flat = flatten(nodes);
+  const at = board.elements.findIndex((el) => doomed.has(el.id));
+  board.elements = board.elements.filter((el) => !doomed.has(el.id));
+  board.elements.splice(Math.max(0, Math.min(at, board.elements.length)), 0, ...flat);
+  selection = new Set(flat.map((el) => el.id));
+  changed();
+  toast(t('Mind map sıradan nesnelere dönüştürüldü (gruplu)'));
+}
+
+// Metin, not ya da Obsidian bölümündeki başlık ve maddelerden mind map kurar. Metin ve not
+// mind map'e dönüşür; Obsidian bölümünün resmi yerinde kalır, mind map yanına konur.
+async function mindFromElement(el) {
+  let text = ownText(el);
+  let title = '';
+  if (el.obsidian) {
+    const r = await api.obsidianMarkdown(el.obsidian);
+    if (r?.error) return toast(r.error);
+    text = r.md;
+    title = el.obsidian.title || '';
+  }
+  const roots = parseOutline(text || '');
+  if (!roots.length) return toast(t('Mind map’e çevrilecek yazı yok'));
+  const keep = !!el.obsidian;
+  const b = bbox(el);
+  checkpoint();
+  const nodes = buildFromOutline(board.elements, roots, { x: b.x, y: b.y, title: title || t('Ana fikir') });
+  const root = nodes[0];
+  if (!keep) board.elements.splice(board.elements.indexOf(el), 1, ...nodes);
+  else board.elements.push(...nodes);
+  // Yerleştikten sonra bütün mind map kaynağın yerine (Obsidian'da yanına) kaydırılır.
+  layoutMindMaps(board.elements);
+  const mb = unionBBox(nodes);
+  root.x += (keep ? b.x + b.w + 80 : b.x) - mb.x;
+  root.y += (keep ? b.y + b.h / 2 - mb.h / 2 : b.y) - mb.y;
+  setTool('select');
+  changed();
+  if (nodes.length === 1) return mindAddChild(root);
+  selectNode(root);
+  toast(t('{n} düğümlü mind map oluşturuldu', { n: nodes.length }));
+}
+
+const canBecomeMind = (el) => el && !el.locked && ((el.type === 'text' || el.type === 'note') ? !!el.text.trim() : !!el.obsidian);
+
+// Özellik panelindeki mind map düğmeleri.
+function mindAction(op) {
+  if (op === 'fromText') return mindFromElement(selectedEls()[0]);
+  if (op === 'flatten') return flattenMind();
+  const n = op === 'resetPos' ? selectedEls().find(isMind) : selectedMind();
+  if (!n) return;
+  if (op === 'child') mindAddChild(n);
+  else if (op === 'sibling') mindAddSibling(n);
+  else if (op === 'collapse') toggleCollapse(n);
+  else if (op === 'outline') copyOutline(n);
+  else if (op === 'resetPos') mindEdit(n, (els) => resetPlacement(els, selectedEls().filter(isMind)));
+  else if (op === 'detach') {
+    mindEdit(n, () => {
+      // Ayrılan dal biraz uzağa konur ki eski mind map'in üstünde kalmasın.
+      const dir = n.edir;
+      detach(n);
+      n.x += dir === 'd' ? 0 : dir === 'l' ? -60 : 60;
+      n.y += dir === 'd' ? 60 : 0;
+    });
+  }
+}
+
+// Tek düğüm (dalıyla) sürüklenirken altına bırakılacak düğüm.
+function mindDropTarget(w, ids) {
+  const tol = 5 / board.view.zoom;
+  for (let i = board.elements.length - 1; i >= 0; i--) {
+    const el = board.elements[i];
+    if (isMind(el) && !ids.has(el.id) && hitTest(el, w.x, w.y, tol)) return el;
+  }
+  return null;
+}
+
+// Bırakınca: bir düğümün üstündeyse onun alt dalı olur; Alt basılıysa kardeşleri arasında yer
+// değiştirir; yoksa bırakıldığı yerde kalır.
+function dropMind(d, w, alt) {
+  const n = d.mind?.node;
+  const tgt = d.mind?.target;
+  if (!n || (!tgt && !alt)) {
+    const top = [...d.orig.keys()].filter((el) => isMind(el) && el.parentId && !d.ids.has(el.parentId));
+    return placeFree(board.elements, top);
+  }
+  if (tgt) {
+    const wasRoot = !n.parentId;
+    reparent(board.elements, n, tgt, { side: tgt.depth ? undefined : w.x < tgt.x + tgt.w / 2 ? 'l' : 'r' });
+    if (wasRoot) {
+      delete n.layout;
+      if (tgt.depth) delete n.color;
+    }
+  } else if (n.parentId) dropReorder(board.elements, n);
+}
+
+// Seçili tek düğümün yanındaki "+" düğmeleri (ekran koordinatı); kökte iki yana birer tane.
+function mindButtons() {
+  const n = selectedMind();
+  if (!n || n.hidden || editing || drag || board.readOnly || activeTool() !== 'select') return [];
+  const idx = mindIndex(board.elements);
+  const root = rootOf(idx, n);
+  const dirs = !n.depth && (root.layout || 'map') === 'map' ? ['r', 'l'] : [childDir(n, root)];
+  const z = board.view.zoom;
+  return dirs.map((dir) => {
+    const a0 = mindOutAnchor(n, dir);
+    const a = toScreen(a0.x, a0.y);
+    // Daraltılmış düğümde düğme, gizli dal sayısını gösteren rozetin ötesindedir.
+    const off = (n.collapsed ? mindBadge(n).r * 2 * z + 3 * z : 0) + MIND_BTN_R + 7;
+    const v = dir === 'd' ? [0, 1] : [dir === 'l' ? -1 : 1, 0];
+    return { node: n, side: dir === 'd' ? undefined : dir, x: a.x + v[0] * off, y: a.y + v[1] * off };
+  });
+}
+
+function mindButtonAt(sx, sy) {
+  return mindButtons().find((b) => Math.hypot(sx - b.x, sy - b.y) <= MIND_BTN_R + 3) || null;
+}
+
+// Daraltılmış düğümün sayı rozeti (tıklayınca dal açılır).
+function mindBadgeAt(w) {
+  for (let i = board.elements.length - 1; i >= 0; i--) {
+    const el = board.elements[i];
+    if (!isMind(el) || !el.collapsed || el.hidden || !el.nkids) continue;
+    const b = mindBadge(el);
+    if (Math.hypot(w.x - b.x, w.y - b.y) <= b.r + 3 / board.view.zoom) return el;
+  }
+  return null;
+}
+
+function drawMindOverlay() {
+  for (const b of mindButtons()) {
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, MIND_BTN_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x - 4.5, b.y);
+    ctx.lineTo(b.x + 4.5, b.y);
+    ctx.moveTo(b.x, b.y - 4.5);
+    ctx.lineTo(b.x, b.y + 4.5);
+    ctx.stroke();
+  }
+  // Sürüklenen dalın bırakılacağı düğüm: kesikli çerçeve ve ona giden kesikli çizgi.
+  const tgt = drag?.kind === 'move' && drag.mind?.target;
+  if (tgt) {
+    const n = drag.mind.node;
+    const r = screenRect(tgt);
+    ctx.strokeStyle = SELECT_COLOR;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.roundRect(r.x - 4, r.y - 4, r.w + 8, r.h + 8, 8);
+    ctx.stroke();
+    const a = toScreen(tgt.x + tgt.w / 2, tgt.y + tgt.h / 2);
+    const c = toScreen(n.x + n.w / 2, n.y + n.h / 2);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// Seçili tek düğüm varken klavye: true dönerse tuş işlendi.
+function mindKey(e, n) {
+  const k = e.key;
+  if (k === 'Tab') {
+    e.preventDefault();
+    if (e.shiftKey) mindEdit(n, (els) => promote(els, n));
+    else mindAddChild(n);
+    return true;
+  }
+  if (k === 'Enter') {
+    e.preventDefault();
+    mindAddSibling(n, e.shiftKey);
+    return true;
+  }
+  if (k === 'F2') {
+    e.preventDefault();
+    openEditor(n, false);
+    return true;
+  }
+  if (k === '/' || k === '.') {
+    e.preventDefault();
+    toggleCollapse(n);
+    return true;
+  }
+  if (k.startsWith('Arrow')) {
+    e.preventDefault();
+    if (e.altKey) {
+      // Alt+ok: kardeşler arasında yukarı / aşağı (ağaçta sola / sağa) taşı.
+      const idx = mindIndex(board.elements);
+      const tree = (rootOf(idx, n).layout || 'map') === 'tree';
+      const d = tree ? { ArrowLeft: -1, ArrowRight: 1 }[k] : { ArrowUp: -1, ArrowDown: 1 }[k];
+      if (d) mindEdit(n, (els) => shiftOrder(els, n, d));
+      return true;
+    }
+    const next = navigate(board.elements, n, k);
+    if (next) selectNode(next);
+    return true;
+  }
+  return false;
 }
 
 // ---------- Kova ----------
@@ -1304,8 +1654,7 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   // Lazer işaretçi cetvel ve açıölçeri de taşımaz; yalnızca iz bırakır.
   if (t === 'laser' && !penEraser) {
-    laserStroke++;
-    addLaserPoint(e.clientX, e.clientY);
+    startLaserTrail(e.clientX, e.clientY);
     drag = { kind: 'laser' };
     requestRender();
     return;
@@ -1497,6 +1846,10 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 function startSelectDrag(e, w) {
+  const btn = mindButtonAt(e.clientX, e.clientY);
+  if (btn) return mindAddChild(btn.node, btn.side);
+  const badge = mindBadgeAt(w);
+  if (badge) return toggleCollapse(badge);
   const handle = hitHandle(e.clientX, e.clientY);
   if (handle) {
     const sel = selectedEls();
@@ -1575,8 +1928,8 @@ canvas.addEventListener('pointermove', (e) => {
       break;
 
     case 'laser': {
-      const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
-      for (const ce of events.length ? events : [e]) addLaserPoint(ce.clientX, ce.clientY);
+      // Excalidraw gibi her pointermove tek nokta ekler; iz uzunluğu (LASER_DECAY_LENGTH) nokta sayısıyla ölçülür.
+      addLaserPoint(e.clientX, e.clientY);
       break;
     }
 
@@ -1657,7 +2010,7 @@ canvas.addEventListener('pointermove', (e) => {
       let dx = w.x - drag.start.x;
       let dy = w.y - drag.start.y;
       drag.guides = null;
-      if (!e.ctrlKey && !e.metaKey) {
+      if (!e.ctrlKey && !e.metaKey && !drag.mind?.node.parentId) {
         const snap = snapMove(dx, dy);
         dx += snap.dx;
         dy += snap.dy;
@@ -1666,8 +2019,14 @@ canvas.addEventListener('pointermove', (e) => {
       for (const [el, o] of drag.orig) {
         const c = { ...o };
         translate(c, dx, dy);
+        // Taşınmayan üst düğüme bağlı kenar o düğümden çıkmaya devam eder.
+        if (c.edir && !drag.ids.has(c.parentId)) {
+          c.px = o.px;
+          c.py = o.py;
+        }
         Object.assign(el, c);
       }
+      if (drag.mind) drag.mind.target = mindDropTarget(w, drag.ids);
       break;
     }
 
@@ -1769,6 +2128,10 @@ function endPointer(e) {
     case 'pan':
       scheduleViewSave();
       break;
+    case 'laser':
+      endLaserTrail();
+      requestRender();
+      break;
     case 'draw':
       if (d.temp) {
         const t = tempStrokes.find((t) => t.el === d.el);
@@ -1821,6 +2184,7 @@ function endPointer(e) {
     case 'resize':
     case 'endpoint':
     case 'rotate':
+      if (d.kind === 'move' && d.moved && d.orig) dropMind(d, toWorld(e.clientX, e.clientY), e.altKey);
       if (d.moved) changed();
       break;
     case 'lasso':
@@ -1958,7 +2322,7 @@ canvas.addEventListener('dblclick', (e) => {
   const w = toWorld(e.clientX, e.clientY);
   const hit = topHit(w);
   if (hit?.type === 'cover') toggleCover(hit);
-  else if (hit && (hit.type === 'text' || hit.type === 'note')) openEditor(hit, false);
+  else if (hit && (hit.type === 'text' || hit.type === 'note' || hit.type === 'mindnode')) openEditor(hit, false);
   else if (hit?.type === 'table') openEditor(hit, false, cellAt(hit, w));
   else if (hit?.type === 'link') openLinkEl(hit);
   else if (hit?.type === 'embed') openEmbed(hit);
@@ -2374,6 +2738,7 @@ function searchText(el) {
 
 function ownText(el) {
   if (el.type === 'text' || el.type === 'note') return el.text;
+  if (el.type === 'mindnode') return el.hidden ? '' : el.text;
   if (el.type === 'table') return el.cells.map((row) => row.join('\t')).join('\n');
   if (el.type === 'link') return [el.title, el.desc, el.url].filter(Boolean).join('\n');
   if (el.type === 'embed') return [el.title, el.url].filter(Boolean).join('\n');
@@ -2630,15 +2995,86 @@ function cropCursor(part) {
 }
 
 // ---------- Lazer işaretçi ----------
-// Sunum yaparken imleç parlayan bir nokta olur (rengi panelden seçilir); basılı tutup çizince arkasında kısa
-// süre görünüp sönen bir iz bırakır. Tahtaya kaydedilmez, geri alma listesine girmez.
+// Sunum yaparken imleç parlayan bir nokta olur (rengi panelden seçilir); basılı tutup çizince arkasında
+// sönen bir iz bırakır. Tahtaya kaydedilmez, geri alma listesine girmez.
+// Excalidraw'daki lazerle aynı mantık: izin her noktasının kalınlığı hem yaşına (LASER_DECAY_MS) hem de
+// uca olan uzaklığına (LASER_DECAY_LENGTH nokta) göre incelir; kalınlığı sıfıra inen noktalar izin en
+// başından atılır. Böylece iz kuyruktan uca doğru, en eski yerinden başlayarak silinir. Basılı tutulurken
+// uç noktası korunur; bırakılınca o da sönüp iz tamamen kaybolur.
 
-const LASER_FADE_MS = 2500;
-let laserTrail = []; // { x, y, t, s } ekran koordinatı; s: hangi çizgiye ait olduğu
-let laserStroke = 0;
+const LASER_DECAY_MS = 1000;
+const LASER_DECAY_LENGTH = 50;
+const LASER_STREAMLINE = 0.4; // yeni nokta, işaretçiye doğru bu oranda geride kalarak titreme yumuşatılır
+const LASER_SIZE = 3; // px; izin uçtaki yarı kalınlığı
+let laserTrails = []; // her iz: { pts: [{ x, y, t }], open } ekran koordinatı; open: hâlâ çiziliyor
+let laserCurrent = null;
+
+function startLaserTrail(x, y) {
+  laserCurrent = { pts: [{ x, y, t: performance.now() }], open: true };
+  laserTrails.push(laserCurrent);
+}
 
 function addLaserPoint(x, y) {
-  laserTrail.push({ x, y, t: performance.now(), s: laserStroke });
+  if (!laserCurrent) return startLaserTrail(x, y);
+  const pts = laserCurrent.pts;
+  const last = pts[pts.length - 1];
+  const k = 1 - LASER_STREAMLINE;
+  const p = { x: last.x + (x - last.x) * k, y: last.y + (y - last.y) * k, t: performance.now() };
+  if (Math.hypot(p.x - last.x, p.y - last.y) < 0.5) return;
+  pts.push(p);
+}
+
+function endLaserTrail() {
+  if (laserCurrent) laserCurrent.open = false;
+  laserCurrent = null;
+}
+
+const laserEaseOut = (k) => 1 - Math.pow(1 - k, 4);
+
+// Noktaların yarı kalınlıkları; baştaki sönmüş noktalar izden atılır.
+function laserRadii(trail, now) {
+  const pts = trail.pts;
+  const n = pts.length;
+  const radius = (i) => {
+    const t = Math.max(0, 1 - (now - pts[i].t) / LASER_DECAY_MS);
+    const l = (LASER_DECAY_LENGTH - Math.min(LASER_DECAY_LENGTH, n - 1 - i)) / LASER_DECAY_LENGTH;
+    return LASER_SIZE * Math.min(laserEaseOut(l), laserEaseOut(t));
+  };
+  let start = 0;
+  while (start < n && radius(start) <= 0.05 && !(trail.open && start === n - 1)) start++;
+  if (start) pts.splice(0, start);
+  return pts.map((_, i) => (trail.open && i === pts.length - 1 ? Math.max(LASER_SIZE * 0.5, radius(i)) : radius(i)));
+}
+
+// Uca doğru kalınlaşan izi tek bir dolu çokgen olarak verir.
+function laserOutline(pts, radii) {
+  const path = new Path2D();
+  const n = pts.length;
+  if (n === 1) {
+    path.arc(pts[0].x, pts[0].y, radii[0], 0, Math.PI * 2);
+    return path;
+  }
+  const left = [];
+  const right = [];
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)];
+    const b = pts[Math.min(n - 1, i + 1)];
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const nx = -(b.y - a.y) / len;
+    const ny = (b.x - a.x) / len;
+    const r = radii[i];
+    left.push([pts[i].x + nx * r, pts[i].y + ny * r]);
+    right.push([pts[i].x - nx * r, pts[i].y - ny * r]);
+  }
+  path.moveTo(left[0][0], left[0][1]);
+  for (let i = 1; i < n; i++) path.lineTo(left[i][0], left[i][1]);
+  const head = pts[n - 1];
+  const prev = pts[n - 2];
+  const ang = Math.atan2(head.y - prev.y, head.x - prev.x);
+  path.arc(head.x, head.y, radii[n - 1], ang + Math.PI / 2, ang - Math.PI / 2, true);
+  for (let i = n - 1; i >= 0; i--) path.lineTo(right[i][0], right[i][1]);
+  path.closePath();
+  return path;
 }
 
 // '#rrggbb' -> 'r, g, b' (rgba() içinde saydamlıkla kullanmak için).
@@ -2650,24 +3086,20 @@ function rgbOf(hex) {
 
 function drawLaser() {
   const now = performance.now();
-  laserTrail = laserTrail.filter((p) => now - p.t < LASER_FADE_MS);
+  // Sürükleme başka bir yoldan bittiyse (araç değişimi vb.) açık iz de kapanır.
+  if (laserCurrent && drag?.kind !== 'laser') endLaserTrail();
   const rgb = rgbOf(styles.laser.color);
   ctx.save();
-  ctx.lineCap = 'round';
   ctx.shadowColor = `rgba(${rgb}, 0.8)`;
   ctx.shadowBlur = 10;
-  for (let i = 1; i < laserTrail.length; i++) {
-    const a = laserTrail[i - 1];
-    const b = laserTrail[i];
-    if (a.s !== b.s) continue;
-    const k = 1 - (now - b.t) / LASER_FADE_MS;
-    ctx.strokeStyle = `rgba(${rgb}, ${0.9 * k})`;
-    ctx.lineWidth = 2 + 4 * k;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
+  ctx.fillStyle = `rgb(${rgb})`;
+  const outlines = [];
+  for (const trail of laserTrails) {
+    const radii = laserRadii(trail, now);
+    if (trail.pts.length) outlines.push(laserOutline(trail.pts, radii));
   }
+  laserTrails = laserTrails.filter((tr) => tr.pts.length && (tr.open || tr.pts.some((p) => now - p.t < LASER_DECAY_MS)));
+  for (const path of outlines) ctx.fill(path);
   if (pointer && activeTool() === 'laser') {
     const g = ctx.createRadialGradient(pointer.x, pointer.y, 0, pointer.x, pointer.y, 11);
     g.addColorStop(0, 'rgba(255, 255, 255, 1)');
@@ -2680,7 +3112,7 @@ function drawLaser() {
     ctx.fill();
   }
   ctx.restore();
-  if (laserTrail.length) requestRender();
+  if (laserTrails.length) requestRender();
 }
 
 // ---------- Pergel ----------
@@ -2821,7 +3253,7 @@ function eraseAlong(a, b) {
   const { mode, all } = styles.eraser;
   // Kilitli nesneler silgiden etkilenmez; not, resim, bant ve koordinat sistemi yalnızca "hepsini sil" açıkken silinir.
   const hits = board.elements.filter((el) => !el.locked &&
-    (all || !['note', 'image', 'cover', 'axes', 'table', 'sticker', 'link', 'embed'].includes(el.type)) && samples.some((p) => hitTest(el, p.x, p.y, r)));
+    (all || !['note', 'image', 'cover', 'axes', 'table', 'sticker', 'link', 'embed', 'mindnode'].includes(el.type)) && samples.some((p) => hitTest(el, p.x, p.y, r)));
   if (!hits.length) return;
   if (!drag.checkpointed) {
     checkpoint();
@@ -2941,6 +3373,7 @@ function updateCursor(e) {
     else if (h === 'ne' || h === 'sw') c = 'nesw-resize';
     else if (h === 'rot') c = 'grab';
     else if (h) c = 'move';
+    else if (mindButtonAt(e.clientX, e.clientY) || mindBadgeAt(toWorld(e.clientX, e.clientY))) c = 'pointer';
     else if (topHit(toWorld(e.clientX, e.clientY))) c = 'move';
   }
   canvas.style.cursor = c;
@@ -2958,7 +3391,7 @@ function openEditor(el, isNew, cell = null) {
   editing = { el, isNew, text, h: el.h, cell, sig: styleSig(el) };
   selection.clear();
   editor.value = text;
-  editor.className = el.type === 'note' || cell ? 'note' : '';
+  editor.className = el.type === 'note' || isMind(el) || cell ? 'note' : '';
   editor.style.display = 'block';
   positionEditor();
   // Tıklamanın varsayılan odak değişikliği bittikten sonra odakla.
@@ -2997,6 +3430,17 @@ function positionEditor() {
     st.transform = '';
     return;
   }
+  if (isMind(el)) {
+    // Satırlar düğümün çiziminde olduğu gibi aynı genişlikte kaydırılır.
+    const pd = mindPad(el);
+    st.color = mindTextColor(el);
+    st.left = p.x + pd.x * z + 'px';
+    st.top = p.y + pd.y * z + 'px';
+    st.width = Math.max(4, Math.min(MIND_MAX_W, el.w - pd.x * 2 + el.fontSize * 0.4) * z - indent) + 'px';
+    st.height = Math.max(4, (el.h - pd.y * 2) * z) + 'px';
+    st.transform = '';
+    return;
+  }
   if (el.type === 'note') {
     st.color = '#1f2328';
     st.left = p.x + NOTE_PADDING * z + 'px';
@@ -3027,6 +3471,11 @@ editor.addEventListener('input', () => {
   if (!editing) return;
   if (editing.cell) fitTable(editing.el, { ...editing.cell, text: editor.value });
   else if (editing.el.type === 'note') fitNoteHeight(editing.el, editor.value);
+  else if (isMind(editing.el)) {
+    // Düğüm yazıldıkça büyür, dallar ona göre yeniden dizilir.
+    editing.el.text = editor.value;
+    layoutMindMaps(board.elements);
+  }
   requestRender();
 });
 
@@ -3043,6 +3492,17 @@ editor.addEventListener('keydown', (e) => {
   if (e.key === 'Tab' && editing?.cell) {
     e.preventDefault();
     moveCell(e.shiftKey ? -1 : 1);
+    return;
+  }
+  // Mind map düğümünde: Enter yazmayı bitirip kardeş, Tab alt dal ekler (Shift+Enter yeni satır).
+  if (editing && isMind(editing.el) && !e.isComposing && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey))) {
+    e.preventDefault();
+    const n = editing.el;
+    commitEditor();
+    if (!board.elements.includes(n)) return; // boş bırakılan yeni düğüm silindi
+    if (e.key === 'Enter') mindAddSibling(n);
+    else if (e.shiftKey) mindEdit(n, (els) => promote(els, n));
+    else mindAddChild(n);
     return;
   }
   if (e.key === 'Escape' || (e.key === 'Enter' && e.ctrlKey)) {
@@ -3065,6 +3525,27 @@ function commitEditor() {
     }
     fitTable(el);
     if (!isNew && text === oldText && el.h === oldH && styleSig(el) === sig) {
+      undoStack.pop();
+      changed(false);
+      return;
+    }
+    changed();
+    return;
+  }
+
+  if (isMind(el)) {
+    // Boş bırakılan yeni düğüm hiç eklenmemiş sayılır (kardeşlerin kayan sıraları da geri gelir).
+    if (isNew && !text.trim()) {
+      board.elements = undoStack.pop();
+      updateUndoButtons();
+      const p = board.elements.find((x) => x.id === el.parentId);
+      selection = p ? new Set([p.id]) : new Set();
+      changed(false);
+      return;
+    }
+    el.text = text;
+    selection = new Set([el.id]);
+    if (!isNew && text === oldText && styleSig(el) === sig) {
       undoStack.pop();
       changed(false);
       return;
@@ -3105,6 +3586,7 @@ function propsContext() {
   if (editing) {
     const el = editing.el;
     if (editing.cell) return { colors: INK_COLORS, font: true, textFmt: true, table: el, values: el };
+    if (isMind(el)) return { colors: MIND_COLORS, font: true, textFmt: true, values: { ...el, color: el.branch } };
     return el.type === 'note'
       ? { noteColors: true, font: true, textFmt: true, values: { ...el, noteColor: el.color } }
       : { colors: INK_COLORS, font: true, textFmt: true, values: el };
@@ -3118,6 +3600,10 @@ function propsContext() {
       ctx.colors = sel.every((el) => el.highlighter) ? HIGHLIGHT_COLORS
         : sel.every((el) => el.type === 'cover') ? COVER_COLORS : INK_COLORS;
       ctx.values.color = first('stroke', 'line', 'arrow', 'rect', 'ellipse', 'polygon', 'text', 'cover', 'axes', 'table').color;
+    }
+    if (sel.every(isMind)) {
+      ctx.colors = MIND_COLORS;
+      ctx.values.color = sel[0].branch;
     }
     // Yalnızca galaksi çizgileri seçiliyse renk satırı galaksi renklerini gösterir.
     if (sel.every((el) => el.type === 'stroke' && !el.highlighter && el.brush === 'galaxy')) {
@@ -3150,7 +3636,7 @@ function propsContext() {
       }
     }
     // Opaklık: kovayla boyanmış alanlarda dolgunun, diğer her öğede öğenin tamamının opaklığı.
-    ctx.opacity = true;
+    ctx.opacity = !has('mindnode');
     ctx.values.opacity = sel[0][opacityKey(sel[0])] ?? 1;
     if (hasOutlined('rect', 'ellipse', 'polygon')) {
       ctx.fill = true;
@@ -3172,6 +3658,14 @@ function propsContext() {
       ctx.stickers = true;
       ctx.values.emoji = sel[0].emoji;
     }
+    if (has('mindnode')) {
+      const n = first('mindnode');
+      const root = rootOf(mindIndex(board.elements), n);
+      ctx.mind = { one: sel.length === 1 ? n : null, layout: root.layout || 'map', placed: hasPlacement(board.elements, sel.filter(isMind)) };
+      ctx.values.mindShape = sel.every((el) => !isMind(el) || mindShapeOf(el) === mindShapeOf(n)) ? mindShapeOf(n) : null;
+      ctx.values.mindFill = mindFillOf(n);
+    }
+    ctx.toMind = sel.length === 1 && canBecomeMind(sel[0]);
     ctx.link = sel.length === 1 && sel[0].type === 'link';
     ctx.embed = sel.length === 1 && sel[0].type === 'embed';
     // Hizalama ve gruplama birimleri: her grup bir birim sayılır.
@@ -3334,6 +3828,30 @@ function updateProps() {
       `<button class="emoji-btn${e === v.emoji ? ' selected' : ''}" data-emoji="${e}">${e}</button>`,
     ).join('');
   }
+  const mind = c.mind;
+  $('#mindRow').classList.toggle('hidden', !mind);
+  $('#mindStyleRow').classList.toggle('hidden', !mind);
+  $('#mindMoreRow').classList.toggle('hidden', !mind);
+  $('#toMindRow').classList.toggle('hidden', !c.toMind);
+  if (mind) {
+    const one = mind.one;
+    for (const b of document.querySelectorAll('#mindRow [data-mind="child"], #mindRow [data-mind="sibling"], #mindMoreRow [data-mind]')) {
+      b.classList.toggle('hidden', !one);
+    }
+    $('[data-mind="detach"]').classList.toggle('hidden', !one?.parentId);
+    $('[data-mind="resetPos"]').classList.toggle('hidden', !mind.placed);
+    const col = $('[data-mind="collapse"]');
+    col.classList.toggle('hidden', !one || !one.nkids);
+    col.textContent = one?.collapsed ? t('Dalı aç ({n})', { n: one.nkids }) : t('Daralt');
+    col.classList.toggle('selected', !!one?.collapsed);
+    document.querySelectorAll('[data-mind-layout]').forEach((b) => b.classList.toggle('selected', b.dataset.mindLayout === mind.layout));
+    document.querySelectorAll('[data-mind-shape]').forEach((b) => b.classList.toggle('selected', b.dataset.mindShape === v.mindShape));
+    const boxed = v.mindShape === 'rounded' || v.mindShape === 'pill';
+    document.querySelectorAll('[data-mind-fill]').forEach((b) => {
+      b.classList.toggle('hidden', !boxed);
+      b.classList.toggle('selected', b.dataset.mindFill === v.mindFill);
+    });
+  }
   $('#linkRow').classList.toggle('hidden', !c.link);
   $('#embedRow').classList.toggle('hidden', !c.embed);
   $('#alignRow').classList.toggle('hidden', !c.align);
@@ -3419,6 +3937,10 @@ function applyStyle(prop, value, keepUndo = false) {
     if (FMT_PROPS.includes(prop)) setFmt(el, prop, value);
     if (editing.cell) fitTable(el, { ...editing.cell, text: editor.value }, prop === 'fontSize');
     else if (el.type === 'note') fitNoteHeight(el, editor.value);
+    else if (isMind(el)) {
+      if (prop === 'color') el.color = value;
+      layoutMindMaps(board.elements);
+    }
     requestRender();
     updateProps();
     setTimeout(() => editor.focus());
@@ -3461,6 +3983,7 @@ function applyStyle(prop, value, keepUndo = false) {
         el.fontSize = value;
         fitNoteHeight(el, el.text);
       }
+      if (prop === 'fontSize' && el.type === 'mindnode') el.fontSize = value;
       if (prop === 'fontSize' && el.type === 'table') {
         el.fontSize = value;
         fitTable(el, null, true);
@@ -3526,6 +4049,10 @@ $('#props').addEventListener('click', (e) => {
   else if (b.dataset.alignOp) alignSelection(b.dataset.alignOp);
   else if (b.dataset.table) tableAction(b.dataset.table);
   else if (b.dataset.emoji) applyStyle('emoji', b.dataset.emoji);
+  else if (b.dataset.mind) mindAction(b.dataset.mind);
+  else if (b.dataset.mindLayout) setMindProp('layout', b.dataset.mindLayout);
+  else if (b.dataset.mindShape) setMindProp('shape', b.dataset.mindShape);
+  else if (b.dataset.mindFill) setMindProp('fill', b.dataset.mindFill);
   else if (b.dataset.link === 'open') openLinkEl(selectedEls()[0]);
   else if (b.dataset.link === 'refresh') fetchLinkInfo(selectedEls()[0], true);
   else if (b.dataset.link === 'embed') linkToEmbed(selectedEls()[0]);
@@ -3809,19 +4336,36 @@ function unlockAll() {
 
 function deleteSelection() {
   if (!selection.size) return;
+  const sel = selectedEls();
+  const doomed = new Set(withSubtrees(sel).map((el) => el.id));
+  // Tek düğüm silinince klavyeyle sürdürülebilsin diye kardeşi (yoksa üst düğümü) seçilir.
+  let next = null;
+  if (sel.length === 1 && isMind(sel[0]) && sel[0].parentId) {
+    const idx = mindIndex(board.elements);
+    const p = idx.byId.get(sel[0].parentId);
+    const sibs = p ? idx.childrenOf(p) : [];
+    const i = sibs.indexOf(sel[0]);
+    next = sibs[i + 1] || sibs[i - 1] || p || null;
+  }
   checkpoint();
-  board.elements = board.elements.filter((el) => !selection.has(el.id));
-  selection.clear();
+  board.elements = board.elements.filter((el) => !doomed.has(el.id));
+  selection = next ? new Set([next.id]) : new Set();
   changed();
 }
 
 function insertCopies(els, offset) {
   checkpoint();
-  // Kopyalanan gruplar yeni grup kimliği alır; kopya asıl grupla birleşmez.
+  // Kopyalanan gruplar yeni grup kimliği alır; kopya asıl grupla birleşmez. Mind map düğümleri
+  // kopyadaki üst düğümlerine bağlanır; üst düğümü kopyalanmayan düğüm yeni bir mind map'in kökü olur.
   const gids = new Map();
+  const ids = new Map(els.map((el) => [el.id, newId()]));
   const copies = els.map((el) => {
     const c = cloneEl(el);
-    c.id = newId();
+    c.id = ids.get(el.id);
+    if (isMind(c)) {
+      if (ids.has(c.parentId)) c.parentId = ids.get(c.parentId);
+      else if (c.parentId) detach(c);
+    }
     if (c.groupId) {
       if (!gids.has(c.groupId)) gids.set(c.groupId, newId());
       c.groupId = gids.get(c.groupId);
@@ -3839,7 +4383,7 @@ function duplicateSelection() {
   const sel = selectedEls();
   if (!sel.length) return;
   const d = 20 / board.view.zoom;
-  insertCopies(sel.map(withoutComments), { x: d, y: d });
+  insertCopies(withSubtrees(sel).map(withoutComments), { x: d, y: d });
 }
 
 // ---------- Salt okunur tahta ----------
@@ -4073,6 +4617,7 @@ function runAction(a) {
       return requestRender();
     case 'axes': return insertAxes();
     case 'table': return insertTable();
+    case 'mindmap': return insertMindMap();
     case 'template': return openTemplates();
     case 'periodic': return insertPeriodic();
     case 'link': return insertLink();
@@ -4862,7 +5407,7 @@ const TOOL_LABELS = {
   eraser: t('Silgi'), bucket: t('Boya kovası'), ruler: t('Cetveli aç / kapat'), protractor: t('Açıölçeri aç / kapat'), rect: t('Dikdörtgen'),
   ellipse: t('Elips'), line: t('Çizgi'), arrow: t('Ok'), compass: t('Pergel'), text: t('Metin'), note: t('Yapışkan not'),
   cover: t('Gizleme bandı'), image: t('Resim veya PDF ekle'), obsidian: t("Obsidian'dan ekle"), axes: t('Koordinat sistemi ekle'),
-  sticker: t('Çıkartma (emoji)'), table: t('Tablo ekle'), template: t('Şablon ekle'), link: t('Bağlantı kartı ekle'),
+  sticker: t('Çıkartma (emoji)'), table: t('Tablo ekle'), mindmap: t('Mind map ekle'), template: t('Şablon ekle'), link: t('Bağlantı kartı ekle'),
 };
 // Menü hızlandırıcıları ve fare/klavye kombinasyonları (araç kısayolları dışındakiler).
 const GENERAL_KEYS = [
@@ -4876,6 +5421,8 @@ const GENERAL_KEYS = [
   [['Ctrl', t('sürükle')], t('Taşırken hizalama kılavuzlarına yapışma')],
   [['Ctrl+B', 'Ctrl+I', 'Ctrl+U'], t('Kalın / italik / altı çizili')],
   [['Tab', 'Shift+Tab'], t('Tabloda sonraki / önceki hücre (son hücrede Tab yeni satır ekler)')],
+  [['Tab', 'Enter'], t('Mind map: alt dal / kardeş dal ekle (Shift+Tab bir üst seviyeye taşır)')],
+  [['/', 'Alt+↑↓'], t('Mind map: dalı daralt / aç; dalın sırasını değiştir')],
   [[t('Ok tuşları')], t('Seçileni 1 piksel kaydır (Shift ile 10)')], [['['], t('Arkaya gönder')], [[']'], t('Öne getir')],
   [['Esc'], t('Seçimi bırak, açık pencereyi kapat')], [['Shift', t('tıklama')], t('Seçime ekle / çıkar')],
   [[t('Boşluk'), t('sürükle')], t('Tahtayı kaydır')], [['Ctrl', t('tekerlek')], t('Yakınlaştır / uzaklaştır')],
@@ -5473,6 +6020,7 @@ function renderPages(els, opts) {
     else {
       cx.fillStyle = '#ffffff';
       cx.fillRect(0, 0, c.width, c.height);
+      renderOpts.darkBg = false;
     }
     // Sayfaya düşen dilimin dışı kesilir; kenar boşlukları temiz kalır.
     cx.beginPath();
@@ -5952,19 +6500,29 @@ document.addEventListener('drop', (e) => {
 
 // ---------- Pano (kopyala / yapıştır) ----------
 
+// Panodaki düz metin: mind map dalları Markdown ana hattı olarak, diğer nesneler yazılarıyla.
+function clipText(sel) {
+  const ids = new Set(sel.map((el) => el.id));
+  return sel
+    .filter((el) => !isMind(el) || !ids.has(el.parentId))
+    .map((el) => (isMind(el) ? toOutline(board.elements, el) : ownText(el)))
+    .filter(Boolean).join('\n\n');
+}
+
 document.addEventListener('copy', (e) => {
   if (editing || isTyping(e) || !selection.size || overlayOpen()) return;
-  const sel = selectedEls();
+  const sel = withSubtrees(selectedEls());
   // Kopya yorumsuzdur; kes-yapıştır ise nesneyi yorumlarıyla taşır.
   e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel.map(withoutComments)));
-  e.clipboardData.setData('text/plain', sel.map(ownText).filter(Boolean).join('\n\n'));
+  e.clipboardData.setData('text/plain', clipText(sel));
   e.preventDefault();
 });
 
 document.addEventListener('cut', (e) => {
   if (editing || isTyping(e) || !selection.size || overlayOpen() || board.readOnly) return;
-  const sel = selectedEls();
+  const sel = withSubtrees(selectedEls());
   e.clipboardData.setData(CLIP_MIME, JSON.stringify(sel));
+  e.clipboardData.setData('text/plain', clipText(sel));
   e.preventDefault();
   deleteSelection();
 });
@@ -5993,6 +6551,16 @@ document.addEventListener('paste', (e) => {
   // Tek başına bir web adresi: resim adresiyse resim, gömülebilen bilinen bir siteyse (Desmos,
   // YouTube…) embed, değilse bağlantı kartı.
   if (URL_RE.test(text)) return IMAGE_URL_RE.test(text) ? insertImageUrl(text, at) : addUrl(text, at);
+  // Seçili mind map düğümüne yapıştırılan satırlar (madde listesi, başlıklar) onun alt dalları olur.
+  const mn = selectionIsEditable() && selectedMind();
+  const roots = mn && text ? parseOutline(text) : [];
+  if (roots.length) {
+    checkpoint();
+    const nodes = buildFromOutline(board.elements, roots, { parent: mn });
+    board.elements.push(...nodes);
+    changed();
+    return toast(t('{n} düğüm eklendi', { n: nodes.length }));
+  }
   if (text) {
     checkpoint();
     const fs = styles.text.fontSize;
@@ -6097,6 +6665,19 @@ window.addEventListener('keydown', (e) => {
       document.execCommand(k === 'c' ? 'copy' : 'cut');
     }
     return;
+  }
+
+  // Seçili mind map düğümü: Tab / Enter dal ekler, oklar gezdirir. Seçili metin ya da notta Tab
+  // onu mind map'in ana fikri yapar.
+  if (selectionIsEditable() && !board.readOnly) {
+    const mn = selectedMind();
+    if (mn && mindKey(e, mn)) return;
+    const one = selection.size === 1 ? selectedEls()[0] : null;
+    if (e.key === 'Tab' && !e.shiftKey && canBecomeMind(one) && one.type !== 'image') {
+      e.preventDefault();
+      mindFromElement(one);
+      return;
+    }
   }
 
   const brushDigit = e.altKey && /^(?:Digit|Numpad)(\d)$/.exec(e.code);

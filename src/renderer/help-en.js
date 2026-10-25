@@ -278,6 +278,24 @@ export const HELP_EN = {
       <li>What you insert is an ordinary image: move it, resize it, write on it, or crop it to keep part of the table. It stays sharp when you zoom in.</li>
     </ul>
 
+    <h3>Mind map <kbd>U</kbd></h3>
+    <p>Press <b>Mind map</b> in the Insert group (or <kbd>U</kbd>): the main idea box opens in the middle of the screen, start typing. From then on you hardly need the mouse:</p>
+    <ul>
+      <li><kbd>Tab</kbd> adds a <b>child</b> to the selected node, <kbd>Enter</kbd> a <b>sibling</b> (<kbd>Shift+Enter</kbd> above it). They also work while typing: your text is saved and a new branch opens. A new branch left empty is removed by itself.</li>
+      <li><kbd>Shift+Tab</kbd> moves a branch up one level. <kbd>F2</kbd> or a double-click edits the text.</li>
+      <li>Arrow keys move between nodes; <kbd>Alt</kbd>+arrow changes a branch's order. <kbd>/</kbd> or <kbd>.</kbd> collapses / expands a branch; clicking the count next to a collapsed branch also expands it.</li>
+      <li>The <b>+</b> buttons on the edges of the selected node add branches with the mouse. Drag a branch to an empty spot and it stays there (with its children); drop it onto another node to make it that node's child; hold <kbd>Alt</kbd> when dropping to reorder it among its siblings. Dragging the main idea moves the whole map. <b>Reset position</b> in the panel puts manually placed branches back (changing the layout resets them too).</li>
+      <li>Layout is automatic. In the panel you choose <b>Balanced</b> (both sides), <b>Right</b> or <b>Tree</b> (downwards), the node shape (<b>Box</b>, <b>Pill</b>, <b>Underline</b>, <b>Text only</b>), the fill and the branch colour. A colour change applies to the whole branch.</li>
+      <li>Deleting a branch also deletes its children; copy / paste and <kbd>Ctrl+D</kbd> duplicate a branch together with its children.</li>
+    </ul>
+    <h4>Text to mind map, mind map to text</h4>
+    <ul>
+      <li>With a text, note or Obsidian section selected, press <b>Turn into mind map</b> in the panel (<kbd>Tab</kbd> also works for text and notes): headings and bulleted lines become branches by their indentation. An Obsidian section's image stays where it is and the mind map is built next to it.</li>
+      <li>Paste a bullet list or Markdown onto a selected node and its lines become that node's children.</li>
+      <li><b>Copy outline</b> puts the branch on the clipboard as an indented bullet list (ready to paste into Obsidian). Copied nodes paste into other apps in this form too.</li>
+      <li><b>Detach</b> makes a branch a mind map of its own; <b>Convert to objects</b> turns the map into ordinary shapes, text and lines you can edit freely (grouped).</li>
+    </ul>
+
     <h3>Inserting PDFs</h3>
     <p>Choose the PDF with the image button or drag it onto the window. <b>Each page is inserted as a separate image</b>, one below the other; you can take notes on them with the pen.</p>
     <p>For multi-page PDFs you are asked which pages to insert: <b>All pages</b>, a list like <code>1-5, 8, 11-13</code> in the <b>Pages</b> box (<code>11-</code> means from page 11 to the end), or <b>a number of pages starting from a page</b> (e.g. starting at page 12, 4 pages → 12-15). Inserting many pages can take a while.</p>

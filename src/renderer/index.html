@@ -121,6 +121,9 @@
       <button class="tool" data-action="table" title="Tablo — hücreye çift tıklayarak yaz, Tab ile sonraki hücreye geç">
         <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 10h18M3 14.5h18M9 5v14M15 5v14"/></svg>
       </button>
+      <button class="tool" data-action="mindmap" title="Mind map — ana fikri yaz; Tab alt dal, Enter kardeş ekler, oklarla gezilir">
+        <svg viewBox="0 0 24 24"><rect x="8" y="9.5" width="8" height="5" rx="2.5"/><path d="M16 12c2 0 2-5.5 4-5.5M16 12c2 0 2 5.5 4 5.5M8 12c-2 0-2-5.5-4-5.5M8 12c-2 0-2 5.5-4 5.5"/></svg>
+      </button>
       <button class="tool" data-action="template" title="Şablon — Kanban, SWOT, beyin fırtınası, haftalık plan…">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="12" y="4" width="9" height="7" rx="1.5"/><rect x="12" y="13" width="9" height="7" rx="1.5"/></svg>
       </button>
@@ -188,6 +191,33 @@
       <button class="chip" data-table="delRow" title="Satırı sil (düzenlenen hücrenin satırı, yoksa son satır)">− Satır</button>
       <button class="chip" data-table="delCol" title="Sütunu sil (düzenlenen hücrenin sütunu, yoksa son sütun)">− Sütun</button>
       <button class="chip" data-table="header" title="İlk satır kalın ve renkli başlık olur">Başlık satırı</button>
+    </div>
+    <div class="row" id="mindRow">
+      <button class="chip" data-mind="child" title="Alt dal ekle (Tab)">+ Alt dal</button>
+      <button class="chip" data-mind="sibling" title="Kardeş dal ekle (Enter; Shift+Enter üstüne ekler)">+ Kardeş</button>
+      <button class="chip" data-mind="collapse" title="Dalı daralt / aç ( / ya da . ) — daraltılmış dalın yanındaki sayıya tıklamak da açar">Daralt</button>
+      <span class="vsep"></span>
+      <button class="chip" data-mind-layout="map" title="Dallar ana fikrin iki yanına dengeli dağılır">Dengeli</button>
+      <button class="chip" data-mind-layout="right" title="Bütün dallar sağa doğru açılır">Sağa</button>
+      <button class="chip" data-mind-layout="tree" title="Ağaç: dallar aşağı doğru açılır">Ağaç</button>
+    </div>
+    <div class="row" id="mindStyleRow">
+      <button class="chip" data-mind-shape="rounded" title="Köşeleri yuvarlak kutu">Kutu</button>
+      <button class="chip" data-mind-shape="pill" title="Hap biçiminde kutu">Hap</button>
+      <button class="chip" data-mind-shape="underline" title="Altı çizili yazı; dal çizgisi yazının altından devam eder">Alt çizgi</button>
+      <button class="chip" data-mind-shape="none" title="Çerçevesiz, yalnızca yazı">Yalnız yazı</button>
+      <span class="vsep"></span>
+      <button class="chip" data-mind-fill="soft" title="Dal renginin açık tonu">Açık</button>
+      <button class="chip" data-mind-fill="solid" title="Dal rengiyle dolu, yazı beyaz">Dolu</button>
+    </div>
+    <div class="row" id="mindMoreRow">
+      <button class="chip" data-mind="outline" title="Dalı Markdown ana hattı (girintili madde listesi) olarak panoya kopyalar">Ana hattı kopyala</button>
+      <button class="chip" data-mind="resetPos" title="Elle taşınan dalları kendiliğinden yerlerine döndürür">Konumu sıfırla</button>
+      <button class="chip" data-mind="detach" title="Dalı ayırıp kendi başına bir mind map yapar">Ayır</button>
+      <button class="chip" data-mind="flatten" title="Mind map'i sıradan şekil, yazı ve çizgilere çevirir (gruplu)">Nesnelere dönüştür</button>
+    </div>
+    <div class="row" id="toMindRow">
+      <button class="chip" data-mind="fromText" title="Başlıkları ve madde işaretli satırları dallara çevirir (Tab)">Mind map'e çevir</button>
     </div>
     <div class="row" id="linkRow">
       <button class="chip" data-link="open" title="Bağlantıyı varsayılan tarayıcıda açar (çift tık da açar)">Bağlantıyı aç</button>
@@ -782,6 +812,24 @@
               <li><b>Element kartı</b>: elementlere tıklayarak seç ve <b>Seçili kartları ekle</b>'ye bas (ya da elemente çift tıkla). Kartta grup, periyot, blok, elektron dizilimi, katmanlar, elektronegatiflik, 25 °C'deki hâli, erime ve kaynama noktaları ile Bohr modeli bulunur.</li>
               <li>Üstteki kutuya ad, sembol ya da atom numarası yazarak element ara; <kbd>Enter</kbd> ilk eşleşeni seçer. Alttaki sınıf adlarının üstüne gelince o sınıfın elementleri vurgulanır.</li>
               <li>Eklenenler sıradan resimdir: taşınır, boyutlandırılır, üstüne yazılır; kırparak tablonun bir bölümünü de bırakabilirsin. Yakınlaştırınca net kalır.</li>
+            </ul>
+
+            <h3>Mind map <kbd>U</kbd></h3>
+            <p>Ekle grubundan <b>Mind map</b>'e bas (ya da <kbd>U</kbd>): ekranın ortasında ana fikir kutusu açılır, yazmaya başla. Bundan sonra fareye pek gerek yoktur:</p>
+            <ul>
+              <li><kbd>Tab</kbd> seçili düğüme <b>alt dal</b>, <kbd>Enter</kbd> <b>kardeş dal</b> ekler (<kbd>Shift+Enter</kbd> üstüne). Yazarken de çalışırlar: yazdığın kaydedilir, yeni dal açılır. Boş bıraktığın yeni dal kendiliğinden silinir.</li>
+              <li><kbd>Shift+Tab</kbd> dalı bir üst seviyeye taşır. <kbd>F2</kbd> ya da çift tık yazıyı düzenler.</li>
+              <li>Ok tuşları düğümler arasında gezdirir; <kbd>Alt</kbd>+ok dalın sırasını değiştirir. <kbd>/</kbd> ya da <kbd>.</kbd> dalı daraltır / açar; daraltılmış dalın yanındaki sayıya tıklamak da açar.</li>
+              <li>Seçili düğümün kenarlarındaki <b>+</b> düğmeleri fareyle dal ekler. Dalı sürükleyip boş bir yere bırakırsan orada kalır (alt dallarıyla birlikte); başka bir düğümün üstüne bırakırsan onun alt dalı olur; <kbd>Alt</kbd> basılı bırakırsan kardeşleri arasında sırası değişir. Ana fikri sürüklemek bütün haritayı taşır. Elle taşınan dalları panelde <b>Konumu sıfırla</b> yerlerine döndürür (düzen değiştirmek de sıfırlar).</li>
+              <li>Yerleşim kendiliğindendir. Panelden <b>Dengeli</b> (iki yana), <b>Sağa</b> ya da <b>Ağaç</b> (aşağı) düzenini, düğüm biçimini (<b>Kutu</b>, <b>Hap</b>, <b>Alt çizgi</b>, <b>Yalnız yazı</b>), dolguyu ve dal rengini seçersin. Renk değişikliği dalın tamamına uygulanır.</li>
+              <li>Bir dalı silmek alt dallarını da siler; kopyala / yapıştır ve <kbd>Ctrl+D</kbd> dalı alt dallarıyla birlikte çoğaltır.</li>
+            </ul>
+            <h4>Yazıdan mind map, mind map'ten yazı</h4>
+            <ul>
+              <li>Bir metin, not ya da Obsidian bölümü seçiliyken panelde <b>Mind map'e çevir</b>'e bas (metin ve notta <kbd>Tab</kbd> da olur): başlıklar ve madde işaretli satırlar girintilerine göre dallara dönüşür. Obsidian bölümünün resmi yerinde kalır, mind map yanına kurulur.</li>
+              <li>Seçili bir düğüme madde listesi ya da Markdown yapıştırırsan satırlar onun alt dalları olur.</li>
+              <li><b>Ana hattı kopyala</b> dalı girintili madde listesi olarak panoya koyar (Obsidian'a yapıştırmaya hazır). Kopyalanan düğümler başka uygulamalara da bu biçimde yapışır.</li>
+              <li><b>Ayır</b> dalı kendi başına bir mind map yapar; <b>Nesnelere dönüştür</b> haritayı serbestçe düzenlenebilecek sıradan şekil, yazı ve çizgilere çevirir (gruplu gelir).</li>
             </ul>
 
             <h3>PDF ekleme</h3>

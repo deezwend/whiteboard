@@ -74,7 +74,7 @@ export function bbox(el) {
 // açıyı `rot` (radyan) alanında taşır. Koordinat sistemi döndürülmez.
 
 export function canRotate(el) {
-  return el.type !== 'axes' && el.type !== 'table' && el.type !== 'embed';
+  return el.type !== 'axes' && el.type !== 'table' && el.type !== 'embed' && el.type !== 'mindnode';
 }
 
 export function rotatePoint(x, y, cx, cy, a) {
@@ -178,6 +178,7 @@ export function rectContains(outer, inner) {
 }
 
 export function hitTest(el, x, y, tol) {
+  if (el.hidden) return false; // daraltılmış mind map dalının düğümleri
   if (el.rot) [x, y] = unrotate(el, x, y);
   switch (el.type) {
     case 'stroke': {
@@ -264,6 +265,7 @@ function samplePoints(el) {
 
 // Öğenin büyük kısmı (%80) kementin içindeyse seçilmiş sayılır; el çizimindeki küçük taşmalar sorun olmaz.
 export function insideLasso(el, lasso) {
+  if (el.hidden) return false;
   const pts = samplePoints(el);
   const inside = pts.filter(([x, y]) => pointInPolygon(x, y, lasso)).length;
   return inside / pts.length >= 0.8;
@@ -480,6 +482,7 @@ export function translate(el, dx, dy) {
   } else {
     el.x += dx; el.y += dy;
     if (el.type === 'axes') { el.ox += dx; el.oy += dy; }
+    if (el.edir) { el.px += dx; el.py += dy; } // mind map düğümünün üst düğümdeki bağlantı noktası
   }
 }
 

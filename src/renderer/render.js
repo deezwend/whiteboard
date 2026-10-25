@@ -6,8 +6,9 @@ import { t } from './i18n.js';
 
 // Açılmış gizleme bantlarının kimlikleri. Dosyaya kaydedilmez: tahta her açıldığında bantlar kapalıdır.
 export const revealedCovers = new Set();
-// Öğrenci modu kapalıyken formül resimleri yerine düz metin çizilir.
-export const renderOpts = { math: true };
+// Öğrenci modu kapalıyken formül resimleri yerine düz metin çizilir. darkBg: altındaki zemin koyu
+// mu (çerçevesiz mind map düğümlerinin yazı rengi buna göre seçilir); drawBackground günceller.
+export const renderOpts = { math: true, darkBg: false };
 
 const imageCache = new Map();
 let onImageLoad = () => {};
@@ -667,7 +668,7 @@ export function drawElement(ctx, el, hideText = false) {
       if (el.type === 'polygon') {
         el.points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
         ctx.closePath();
-      } else if (el.type === 'rect') roundRectPath(ctx, b.x, b.y, b.w, b.h, Math.min(8, el.width * 2));
+      } else if (el.type === 'rect') roundRectPath(ctx, b.x, b.y, b.w, b.h, el.radius ?? Math.min(8, el.width * 2));
       else ctx.ellipse(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
       const f = fillStyle(el);
       if (f) {
@@ -724,6 +725,10 @@ export function drawElement(ctx, el, hideText = false) {
 
     case 'table':
       drawTable(ctx, el, hideText);
+      break;
+
+    case 'mindnode':
+      drawMindNode(ctx, el, hideText);
       break;
 
     case 'sticker': {
@@ -815,6 +820,154 @@ function drawTable(ctx, el, hide) {
   }
   ctx.rect(el.x, el.y, el.w, el.h);
   ctx.stroke();
+}
+
+// ---------- Mind map düğümü ----------
+// Düğümün kutusu (x, y, w, h), derinliği (depth), dal rengi (branch), üst düğüme bağlanan kenarın
+// yönü (edir: 'r' | 'l' | 'd') ve üst düğümdeki bağlantı noktası (px, py) mindmap.js'teki yerleşim
+// tarafından her değişiklikte yeniden hesaplanır. Kenar çocuk düğümle birlikte, onun altında çizilir.
+
+export const MIND_MAX_W = 320; // yazının kaydırılmadan sığabileceği en geniş satır
+
+export function mindShape(el) {
+  return el.shape || (el.depth ? (el.depth === 1 ? 'rounded' : 'underline') : 'pill');
+}
+
+export function mindFill(el) {
+  return el.fill || (el.depth ? 'soft' : 'solid');
+}
+
+export function mindPad(el) {
+  const s = mindShape(el), fs = el.fontSize;
+  if (s === 'pill') return { x: fs * 0.95, y: fs * 0.5 };
+  if (s === 'rounded') return { x: fs * 0.7, y: fs * 0.42 };
+  return { x: fs * 0.2, y: fs * 0.25 };
+}
+
+// Yazının sığdığı kutunun boyutu (yazı uzunsa MIND_MAX_W'de kaydırılır).
+export function mindNodeSize(el) {
+  measureCtx.font = font(el.fontSize, el);
+  const p = mindPad(el);
+  const { lines, indent } = layoutText(measureCtx, el.text || '', el, MIND_MAX_W);
+  let w = 0;
+  for (const l of lines) w = Math.max(w, indent + measureCtx.measureText(l.text).width);
+  return { w: Math.max(w, el.fontSize * 2.5) + p.x * 2, h: lines.length * el.fontSize * LINE_HEIGHT + p.y * 2 };
+}
+
+// Düğüm yazısının ekranda göründüğü gibi kaydırılmış hâli (sıradan metne dönüştürürken).
+export function mindWrappedText(el) {
+  measureCtx.font = font(el.fontSize, el);
+  return layoutText(measureCtx, el.text || '', null, MIND_MAX_W).lines.map((l) => l.text).join('\n');
+}
+
+// Kenarın düğüme değdiği y: alt çizgili düğümde çizginin hizası, diğerlerinde kutunun ortası.
+function mindAnchorY(el) {
+  return mindShape(el) === 'underline' ? el.y + el.h : el.y + el.h / 2;
+}
+
+// Düğümden çocuklarına giden kenarların çıktığı nokta; dir: çocukların yönü.
+export function mindOutAnchor(el, dir) {
+  if (dir === 'd') return { x: el.x + el.w / 2, y: el.y + el.h };
+  return { x: dir === 'l' ? el.x : el.x + el.w, y: mindAnchorY(el) };
+}
+
+// Üst düğümden bu düğüme gelen kenarın kübik eğrisi: [x0, y0, c1x, c1y, c2x, c2y, x1, y1].
+export function mindEdgeCurve(el) {
+  const x0 = el.px, y0 = el.py;
+  if (el.edir === 'd') {
+    const x1 = el.x + el.w / 2, y1 = el.y;
+    const m = (y1 - y0) / 2;
+    return [x0, y0, x0, y0 + m, x1, y1 - m, x1, y1];
+  }
+  const x1 = el.edir === 'l' ? el.x + el.w : el.x;
+  const y1 = mindAnchorY(el);
+  const m = (x1 - x0) / 2;
+  return [x0, y0, x0 + m, y0, x1 - m, y1, x1, y1];
+}
+
+export function mindEdgeWidth(el) {
+  return Math.max(1.6, 4.2 - (el.depth - 1) * 1.1);
+}
+
+// Düğümün yazı rengi: dolu zeminde zemine göre beyaz / koyu, çerçevesiz düğümde tahtaya göre.
+export function mindTextColor(el) {
+  const s = mindShape(el);
+  if ((s === 'pill' || s === 'rounded') && mindFill(el) === 'solid') return isDark(el.branch || '#364fc7') ? '#ffffff' : '#1f2328';
+  return renderOpts.darkBg ? '#f1f3f5' : '#1f2328';
+}
+
+// Daraltılmış düğümün gizli alt dal sayısını gösteren rozet (dünya koordinatı).
+export function mindBadge(el) {
+  const dir = el.depth ? el.edir : el.layout === 'tree' ? 'd' : 'r';
+  const a = mindOutAnchor(el, dir);
+  const r = Math.max(9, el.fontSize * 0.55);
+  const off = r + 3;
+  return dir === 'd' ? { x: a.x, y: a.y + off, r } : { x: a.x + (dir === 'l' ? -off : off), y: a.y, r };
+}
+
+function drawMindNode(ctx, el, hideText) {
+  if (el.hidden) return;
+  const c = el.branch || el.color || '#364fc7';
+  if (el.edir) {
+    const [x0, y0, c1x, c1y, c2x, c2y, x1, y1] = mindEdgeCurve(el);
+    ctx.strokeStyle = c;
+    ctx.lineWidth = mindEdgeWidth(el);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, x1, y1);
+    ctx.stroke();
+  }
+  const shape = mindShape(el);
+  if (shape === 'pill' || shape === 'rounded') {
+    roundRectPath(ctx, el.x, el.y, el.w, el.h, shape === 'pill' ? el.h / 2 : Math.min(10, el.h / 3));
+    if (mindFill(el) === 'solid') {
+      ctx.fillStyle = c;
+      ctx.fill();
+    } else {
+      // Açık dolgu, altındaki nesneleri örtmesi için önce zemin rengiyle doldurulur.
+      ctx.fillStyle = renderOpts.darkBg ? '#25282c' : '#ffffff';
+      ctx.fill();
+      ctx.fillStyle = hexToRgba(c, renderOpts.darkBg ? 0.3 : 0.14);
+      ctx.fill();
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+  } else if (shape === 'underline') {
+    ctx.strokeStyle = c;
+    ctx.lineWidth = el.depth ? mindEdgeWidth(el) : 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(el.x, el.y + el.h);
+    ctx.lineTo(el.x + el.w, el.y + el.h);
+    ctx.stroke();
+  }
+  if (!hideText) {
+    const p = mindPad(el);
+    const inner = el.w - p.x * 2;
+    ctx.fillStyle = mindTextColor(el);
+    ctx.font = font(el.fontSize, el);
+    ctx.textBaseline = 'top';
+    // Satırlar ölçüldükleri genişlikte kaydırılır; küçük pay, yuvarlamadan doğan fazladan kırılmayı önler.
+    const wrap = Math.min(MIND_MAX_W, inner + el.fontSize * 0.4);
+    drawLines(ctx, el, layoutText(ctx, el.text || '', el, wrap), el.x + p.x, el.y + p.y, inner, el.fontSize);
+  }
+  if (el.collapsed && el.nkids) {
+    const b = mindBadge(el);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fillStyle = renderOpts.darkBg ? '#25282c' : '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.fillStyle = c;
+    ctx.font = font(Math.round(b.r * (el.nkids > 99 ? 0.8 : 1.05)), { bold: true });
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(el.nkids), b.x, b.y + b.r * 0.05);
+  }
 }
 
 // Bağlantı kartı: başlık, açıklama ve alan adı. 340×84'lük bir tasarım alanında çizilip kutuya ölçeklenir.
@@ -1100,9 +1253,10 @@ function drawAxes(ctx, el) {
 export function drawBackground(ctx, view, width, height, pattern, color) {
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, width, height);
+  const dark = isDark(color);
+  renderOpts.darkBg = dark;
   if (pattern === 'none') return;
 
-  const dark = isDark(color);
   let step = 40 * view.zoom;
   while (step < 14) step *= 2;
   while (step > 120) step /= 2;

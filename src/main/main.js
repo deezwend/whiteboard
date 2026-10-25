@@ -661,6 +661,22 @@ ipcMain.handle('obsidian:render', (_e, opts) => {
   return mdrender.renderSection({ vault: v, rel: opts.rel, section: opts.section, width: opts.width });
 });
 
+// Bölümün ham markdown'u (mind map'e çevirmek için).
+ipcMain.handle('obsidian:markdown', (_e, opts) => {
+  const v = knownObsidianVault(opts?.vault);
+  const abs = v && obsidianNotePath(v, opts.rel);
+  if (!abs) return { error: L('Not bulunamadı.') };
+  let text;
+  try {
+    text = fs.readFileSync(abs, 'utf8');
+  } catch {
+    return { error: L('Not okunamadı.') };
+  }
+  const md = obsidian.extractSection(text, opts.section || { kind: 'whole' });
+  if (md == null) return { error: L('Bölüm notta bulunamadı; başlığın adı değişmiş olabilir.') };
+  return { md };
+});
+
 // Notu (ve varsa bölümü) Obsidian uygulamasında açar.
 ipcMain.handle('obsidian:open', (_e, opts) => {
   const v = knownObsidianVault(opts?.vault);

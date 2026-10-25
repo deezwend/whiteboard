@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
   obsidianOutline: (dir, rel) => ipcRenderer.invoke('obsidian:outline', dir, rel),
   obsidianRender: (opts) => ipcRenderer.invoke('obsidian:render', opts),
   obsidianOpen: (opts) => ipcRenderer.invoke('obsidian:open', opts),
+  obsidianMarkdown: (opts) => ipcRenderer.invoke('obsidian:markdown', opts),
   exportPng:(dataUrl) => ipcRenderer.invoke('export:png', dataUrl),
   exportPdf: (pages, landscape) => ipcRenderer.invoke('export:pdf', pages, landscape),
   printPages: (pages, landscape) => ipcRenderer.invoke('export:print', pages, landscape),
