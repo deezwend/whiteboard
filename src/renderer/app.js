@@ -98,7 +98,7 @@ const BRUSHES = [
       <g fill="#fff" stroke="none"><circle cx="6.5" cy="6.6" r=".7"/><circle cx="12" cy="5.4" r=".6"/><circle cx="17" cy="10.4" r=".7"/><circle cx="23" cy="10.6" r=".6"/><circle cx="27.5" cy="6.4" r=".6"/></g>` },
   { id: 'tape', label: t('Bant'), title: t('Desenli yapışkan bant (washi)'),
     icon: '<path d="M2 11.5L30 4.5" stroke="currentColor" stroke-width="7" stroke-linecap="butt" opacity=".75"/><path d="M2 11.5L30 4.5" stroke="#fff" stroke-width="7" stroke-linecap="butt" stroke-dasharray="1.5 2.5" opacity=".5"/>' },
-  { id: 'hatch', label: t('Taralı'), title: t('Çizdiğin alanın içini eğik çizgilerle tarar'),
+  { id: 'hatch', label: t('Taralı'), title: t('Geçtiğin yeri ya da çizdiğin alanın içini eğik çizgilerle tarar'),
     icon: '<defs><clipPath id="brushHatch"><path d="M4 14 9 2h19l-5 12z"/></clipPath></defs><path d="M0 16 14 2M5 16 19 2M10 16 24 2M15 16 29 2M20 16 34 2M25 16 39 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="butt" clip-path="url(#brushHatch)"/>' },
 ];
 // Taralı fırçanın tarama yönleri: 'fwd' varsayılandır (öğeye yazılmaz), diğerleri öğenin hatch alanına yazılır.
@@ -106,6 +106,11 @@ const HATCH_DIRS = [
   { id: 'fwd', label: t('Eğik tarama'), icon: '<path d="M7 15 20 2M12 15 25 2" />' },
   { id: 'back', label: t('Ters eğik tarama'), icon: '<path d="M7 2l13 13M12 2l13 13" />' },
   { id: 'cross', label: t('Çapraz tarama'), icon: '<path d="M7 15 20 2M12 15 25 2M7 2l13 13M12 2l13 13" />' },
+];
+// Taralı fırçanın modları: fırça gibi boyanan şerit (hatchPaint) ya da yolun kapattığı alan.
+const HATCH_MODES = [
+  { paint: true, label: t('Fırçayla tara: geçtiğin yer taranır'), icon: '<path d="M4 12c4-8 8-8 12-3s8 5 12-3" stroke-width="4" />' },
+  { paint: false, label: t('Alanı tara: çizdiğin yolun içi taranır'), icon: '<path d="M9 3h12a6 6 0 0 1 0 12H9A6 6 0 0 1 9 3z" />' },
 ];
 const FONT_SIZES = [16, 24, 36, 56, 80];
 const ERASER_RADIUS = 10; // ekran pikseli
@@ -202,7 +207,7 @@ rebuildKeymap();
 // ---------- Durum ----------
 
 const styles = {
-  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal', galaxy: 'classic', hatch: 'fwd', opacity: 1 },
+  pen: { color: '#1f2328', width: 3, toShape: true, brush: 'normal', galaxy: 'classic', hatch: 'fwd', hatchPaint: true, opacity: 1 },
   highlighter: { color: '#ffd400', width: 18 },
   tempHighlighter: { color: '#ffd400', width: 18 },
   shape: { color: '#1f2328', width: 3, fill: 'none' },
@@ -1370,6 +1375,7 @@ canvas.addEventListener('pointerdown', (e) => {
       if (t === 'pen' && st.brush !== 'normal') el.brush = st.brush;
       if (el.brush === 'galaxy' && st.galaxy && st.galaxy !== 'classic') el.galaxy = st.galaxy;
       if (el.brush === 'hatch' && st.hatch && st.hatch !== 'fwd') el.hatch = st.hatch;
+      if (el.brush === 'hatch' && st.hatchPaint) el.hatchPaint = true;
       if (t === 'pen' && st.opacity < 1) el.opacity = st.opacity;
       board.elements.push(el);
       drag = { kind: 'draw', el, straight: false, anchor: 0 };
@@ -3139,6 +3145,8 @@ function propsContext() {
         ctx.hatch = true;
         const h = sel[0].hatch || 'fwd';
         ctx.values.hatch = sel.every((el) => (el.hatch || 'fwd') === h) ? h : null;
+        const m = !!sel[0].hatchPaint;
+        ctx.values.hatchPaint = sel.every((el) => !!el.hatchPaint === m) ? m : null;
       }
     }
     // Opaklık: kovayla boyanmış alanlarda dolgunun, diğer her öğede öğenin tamamının opaklığı.
@@ -3251,6 +3259,8 @@ function updateProps() {
   if (c.hatch) {
     hatchRow.innerHTML = HATCH_DIRS.map((h) =>
       `<button class="brush-btn${h.id === (v.hatch || 'fwd') ? ' selected' : ''}" data-hatch="${h.id}" title="${h.label}"><svg viewBox="0 0 32 17" stroke="currentColor" stroke-width="1.6">${h.icon}</svg></button>`,
+    ).join('') + '<span class="hatch-sep"></span>' + HATCH_MODES.map((m) =>
+      `<button class="brush-btn${m.paint === v.hatchPaint ? ' selected' : ''}" data-hatch-paint="${m.paint}" title="${m.label}"><svg viewBox="0 0 32 17" stroke="currentColor" stroke-width="1.6">${m.icon}</svg></button>`,
     ).join('');
   }
 
@@ -3434,6 +3444,10 @@ function applyStyle(prop, value, keepUndo = false) {
         if (value === 'fwd') delete el.hatch;
         else el.hatch = value;
       }
+      if (prop === 'hatchPaint' && el.type === 'stroke' && el.brush === 'hatch') {
+        if (value) el.hatchPaint = true;
+        else delete el.hatchPaint;
+      }
       if (prop === 'brush' && el.type === 'stroke' && !el.highlighter) {
         if (value === 'normal') delete el.brush;
         else el.brush = value;
@@ -3504,6 +3518,7 @@ $('#props').addEventListener('click', (e) => {
   else if (b.dataset.fill) applyStyle('fill', b.dataset.fill);
   else if (b.dataset.brush) applyStyle('brush', b.dataset.brush);
   else if (b.dataset.hatch) applyStyle('hatch', b.dataset.hatch);
+  else if (b.dataset.hatchPaint) applyStyle('hatchPaint', b.dataset.hatchPaint === 'true');
   else if (b.dataset.arrange) arrange(b.dataset.arrange);
   else if (b.dataset.fmt) toggleFmt(b.dataset.fmt);
   else if (b.dataset.align) applyStyle('align', b.dataset.align);

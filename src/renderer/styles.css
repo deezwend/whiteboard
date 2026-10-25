@@ -318,6 +318,7 @@ body:not(.student) .student-only { display: none !important; }
 .brush-btn:hover { background: var(--hover); }
 .brush-btn.selected { background: var(--active); border-color: var(--active-border); color: var(--active-fg); }
 .brush-btn svg { width: 32px; height: 16px; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.hatch-sep { width: 1px; height: 20px; background: var(--panel-border); margin: 0 2px; }
 .width-btn span { display: block; border-radius: 99px; background: var(--text); }
 
 .chip {

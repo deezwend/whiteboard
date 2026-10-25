@@ -1,5 +1,5 @@
 // Öğeleri ve arka planı tuvale çizer.
-import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, CELL_PAD, arrowHeadSize, normRect, BRUSH_WIDTH, bbox } from './geometry.js';
+import { FONT_FAMILY, LINE_HEIGHT, NOTE_PADDING, CELL_PAD, arrowHeadSize, normRect, BRUSH_WIDTH, bbox, hatchRadius } from './geometry.js';
 import { compileFunction, functionLabel } from './mathexpr.js';
 import { providerName } from './embed.js';
 import { t } from './i18n.js';
@@ -462,9 +462,13 @@ function drawStrokeArrowHead(ctx, el) {
 // Taralı fırça: çizilen yolun kapattığı alan ince paralel çizgilerle taranır. Çizgiler tuvalin
 // sabit ızgarasına hizalıdır; böylece yan yana taranan alanların çizgileri birbirini sürdürür.
 // Kalınlık tarama sıklığını belirler. hatch: yok = '/' yönü, 'back' = '\' yönü, 'cross' = ikisi.
+// Fırça modunda (hatchPaint) alan, yol boyunca boyanan kalın şerittir; kalınlık şeridin
+// genişliğini belirler, sıklık sabittir.
 function drawHatch(ctx, el) {
   const pts = el.points;
-  if (pts.length < 3) return;
+  const paint = !!el.hatchPaint;
+  if (pts.length < (paint ? 1 : 3)) return;
+  const pad = paint ? hatchRadius(el) : 0;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const [x, y] of pts) {
     if (x < minX) minX = x;
@@ -472,13 +476,34 @@ function drawHatch(ctx, el) {
     if (x > maxX) maxX = x;
     if (y > maxY) maxY = y;
   }
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
   ctx.save();
   ctx.beginPath();
-  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-  ctx.closePath();
+  if (paint) {
+    // Şerit: her noktada daire, her parçada dikdörtgen. Hepsi aynı yönde (ekranda saat yönü)
+    // çizilir ki nonzero kuralında örtüşen yerler boş kalmasın.
+    for (let i = 0; i < pts.length; i++) {
+      const [x, y] = pts[i];
+      ctx.moveTo(x + pad, y);
+      ctx.arc(x, y, pad, 0, Math.PI * 2);
+      if (!i) continue;
+      const [px, py] = pts[i - 1];
+      const len = Math.hypot(x - px, y - py);
+      if (!len) continue;
+      const nx = (-(y - py) / len) * pad, ny = ((x - px) / len) * pad;
+      ctx.moveTo(px - nx, py - ny);
+      ctx.lineTo(x - nx, y - ny);
+      ctx.lineTo(x + nx, y + ny);
+      ctx.lineTo(px + nx, py + ny);
+      ctx.closePath();
+    }
+  } else {
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+  }
   ctx.clip();
   // Çizgiler arası dik uzaklık gap; x ± y sabitinde bu, gap·√2 adımdır.
-  const step = (el.width * 2 + 4) * Math.SQRT2;
+  const step = (paint ? 8 : el.width * 2 + 4) * Math.SQRT2;
   ctx.lineWidth = 1.5;
   ctx.lineCap = 'butt';
   ctx.beginPath();

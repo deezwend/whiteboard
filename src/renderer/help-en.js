@@ -57,7 +57,7 @@ export const HELP_EN = {
       <li><kbd>Alt+8</kbd> <b>Rainbow</b> – has its own colors; the color choice does not apply.</li>
       <li><kbd>Alt+9</kbd> <b>Galaxy</b> – starry space ink; pick the classic space colors or another tone (including a custom color) from the color row. The color of selected galaxy lines can be changed later too.</li>
       <li><kbd>Alt+0</kbd> <b>Tape</b> – patterned sticky tape (washi).</li>
-      <li><b>Hatched</b> – fills the area enclosed by your path with thin slanted lines (like showing the filled part in a physics diagram). Trace around the inside of the shape; the area closes when you lift the pen. Pick the hatch direction in the panel: slanted, reverse slanted or crosshatch. The width sets how dense the hatching is. A hatched area is never converted to a shape and the eraser removes it as a whole. It has no shortcut.</li>
+      <li><b>Hatched</b> – covers a region with thin slanted lines (like showing the filled part in a physics diagram). The panel has two modes: <b>Paint hatching</b> (default) works like a normal brush and hatches wherever the pen passes; the width sets the brush size. <b>Area hatching</b> fills the area enclosed by your path: trace around the inside of the shape and the area closes when you lift the pen; the width sets how dense the hatching is. Pick the hatch direction in the panel too: slanted, reverse slanted or crosshatch. A hatched area is never converted to a shape and the eraser removes it as a whole. It has no shortcut.</li>
     </ul>
     <p class="tip">The brush shortcuts (<kbd>Alt+1</kbd> … <kbd>Alt+0</kbd>) switch to the Pen and pick that brush from any tool. If pen lines are selected, the brush is applied to them.</p>
     <h4>Drawing straight lines</h4>

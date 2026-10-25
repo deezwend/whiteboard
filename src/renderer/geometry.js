@@ -41,6 +41,10 @@ export function bbox(el) {
         if (x > maxX) maxX = x;
         if (y > maxY) maxY = y;
       }
+      if (el.type === 'stroke' && el.brush === 'hatch' && el.hatchPaint) {
+        const r = hatchRadius(el);
+        return { x: minX - r, y: minY - r, w: maxX - minX + 2 * r, h: maxY - minY + 2 * r };
+      }
       // Oklu fırçanın ucu ve kaligrafik fırçaların kalın yerleri çizginin dışına taşar.
       const r = (el.width / 2) * (BRUSH_WIDTH[el.brush] || 1) * (el.pressure && BRUSH_WIDTH[el.brush] ? 1.45 : 1)
         + (el.brush === 'arrow' || el.brush === 'dashedarrow' ?arrowHeadSize(el) : 0);
@@ -180,7 +184,7 @@ export function hitTest(el, x, y, tol) {
       const r = el.width / 2 + tol;
       const pts = el.points;
       // Taralı alan dolgulu şekil gibi içinden de tutulur.
-      if (el.brush === 'hatch' && pts.length > 2 && pointInPolygon(x, y, pts) && !inHatchCut(el, x, y)) return true;
+      if (el.brush === 'hatch' && hatchCovers(el, x, y, tol) && !inHatchCut(el, x, y)) return true;
       if (pts.length === 1) return Math.hypot(x - pts[0][0], y - pts[0][1]) <= r;
       for (let i = 1; i < pts.length; i++) {
         if (distToSeg(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) <= r) return true;
@@ -313,6 +317,24 @@ function densify(pts, step) {
   return out;
 }
 
+// Fırça modundaki taralı alanın (el.hatchPaint) yarıçapı: kalınlık fırçanın boyunu belirler.
+export function hatchRadius(el) {
+  return el.width * 3 + 5;
+}
+
+// (x, y) taralı alanın içinde mi (silinen yerler hariç tutulmaz). Alan modunda yolun kapattığı
+// çokgen, fırça modunda yol boyunca hatchRadius genişliğinde boyanan şerittir.
+export function hatchCovers(el, x, y, tol = 0) {
+  const pts = el.points;
+  if (!el.hatchPaint) return pts.length > 2 && pointInPolygon(x, y, pts);
+  const r = hatchRadius(el) + tol;
+  if (pts.length === 1) return Math.hypot(x - pts[0][0], y - pts[0][1]) <= r;
+  for (let i = 1; i < pts.length; i++) {
+    if (distToSeg(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) <= r) return true;
+  }
+  return false;
+}
+
 // Taralı alanda silinen yer: (x, y) merkezli r yarıçaplı dairelerden (el.cuts) birinin içinde mi.
 export function inHatchCut(el, x, y) {
   return !!el.cuts && el.cuts.some(([cx, cy, r]) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r);
@@ -321,14 +343,8 @@ export function inHatchCut(el, x, y) {
 // Taralı alan kısmi silgide parçalanmaz; silginin geçtiği daireler alandan oyulur (el.cuts).
 // Alanın tamamı silindiyse boş liste döner.
 function eraseHatch(el, samples, r) {
-  const pts = el.points;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const [x, y] of pts) {
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
-  }
+  const b = bbox(el);
+  const minX = b.x, minY = b.y, maxX = b.x + b.w, maxY = b.y + b.h;
   // Yalnızca alana değen daireler saklanır.
   const add = samples.filter((s) => s.x + r >= minX && s.x - r <= maxX && s.y + r >= minY && s.y - r <= maxY)
     .map((s) => [s.x, s.y, r]);
@@ -339,7 +355,7 @@ function eraseHatch(el, samples, r) {
   const step = Math.max((maxX - minX) / 60, (maxY - minY) / 60, 1);
   for (let x = minX + step / 2; x < maxX; x += step) {
     for (let y = minY + step / 2; y < maxY; y += step) {
-      if (pointInPolygon(x, y, pts) && !inHatchCut(out, x, y)) return [out];
+      if (hatchCovers(el, x, y) && !inHatchCut(out, x, y)) return [out];
     }
   }
   return [];
@@ -349,7 +365,7 @@ function eraseHatch(el, samples, r) {
 // Parçalanamayan öğeler için null döner.
 export function splitByEraser(el, samples, r) {
   if (el.type === 'stroke' && el.brush === 'hatch' && !el.highlighter) {
-    return el.points.length > 2 ? eraseHatch(el, samples, r) : null;
+    return el.points.length > 2 || el.hatchPaint ? eraseHatch(el, samples, r) : null;
   }
   let poly = toPolyline(el);
   if (!poly) return null;
