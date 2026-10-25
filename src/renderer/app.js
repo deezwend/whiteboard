@@ -2633,7 +2633,7 @@ function cropCursor(part) {
 // Sunum yaparken imleç parlayan bir nokta olur (rengi panelden seçilir); basılı tutup çizince arkasında kısa
 // süre görünüp sönen bir iz bırakır. Tahtaya kaydedilmez, geri alma listesine girmez.
 
-const LASER_FADE_MS = 700;
+const LASER_FADE_MS = 2500;
 let laserTrail = []; // { x, y, t, s } ekran koordinatı; s: hangi çizgiye ait olduğu
 let laserStroke = 0;
 
