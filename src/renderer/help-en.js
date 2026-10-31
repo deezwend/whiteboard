@@ -29,7 +29,7 @@ export const HELP_EN = {
       <li><b>right-click</b> the button, or</li>
       <li><b>press and hold</b> the button for half a second (right-clicking is hard with a pen).</li>
     </ul>
-    <p class="tip">The small letter/number badges on the tools are their shortcut keys. Hover over a tool to see its description.</p>
+    <p class="tip">The small letter/number badges on the tools are their shortcut keys. Hover over a tool to see its description. With nothing selected, <kbd>←</kbd> / <kbd>→</kbd> switch to the previous / next tool in toolbar order (wrapping around at the end).</p>
 
     <h3>Moving around the board</h3>
     <ul>
@@ -156,6 +156,7 @@ export const HELP_EN = {
 
     <h3>Properties panel</h3>
     <p>The panel below the toolbar changes with what you are doing: brush, color and thickness with the pen; fill with a shape; font size with text; note color with a note; eraser settings with the eraser. If an object is selected, your change applies to <b>that object</b>; otherwise it applies to <b>your next drawings</b>.</p>
+    <p>You can change the thickness from the keyboard too: <kbd>Numpad +</kbd> makes it thicker, <kbd>Numpad −</kbd> thinner (small steps at thin widths, bigger ones at thick widths; the new value shows briefly on screen). Repeated presses form a single undo step.</p>
     <ul>
       <li>The <b>arrow</b> on the panel's bottom edge hides the panel. While hidden, the arrow stays right below the toolbar (the dot next to it shows the selected color); click it to bring the panel back.</li>
       <li>While the <b>pin</b> next to the arrow is on (the default), the panel opens and closes only with the arrow, and if you leave it hidden it stays hidden when you switch tools. With the pin off, the panel hides itself when you start drawing and reappears when you change tools or select an object.</li>
@@ -355,7 +356,7 @@ export const HELP_EN = {
     <p>The <b>lock</b> button at the top left makes the board read-only; "Read-only" appears next to it. The setting is saved with the board, so it opens read-only every time.</p>
     <ul>
       <li>Nothing can be added, deleted, moved or changed; undo, paste, drag and drop and background changes are off too.</li>
-      <li>Only <b>Pan</b> and the <b>Laser pointer</b> remain on the toolbar. You can zoom with the wheel, two fingers or the buttons at the bottom right, and search with <kbd>Ctrl+F</kbd>.</li>
+      <li>Only <b>Pan</b> and the <b>Laser pointer</b> remain on the toolbar; <kbd>←</kbd> / <kbd>→</kbd> switch between them. You can zoom with the wheel, two fingers or the buttons at the bottom right, and search with <kbd>Ctrl+F</kbd>.</li>
       <li>Comments can be read, but new ones cannot be written.</li>
       <li>Click the lock again to go back to editing; the tool you used before is selected again.</li>
     </ul>

@@ -4154,6 +4154,24 @@ $('#widthRange').addEventListener('wheel', (e) => {
   applyStyle('width', w);
 }, { passive: false });
 
+// Numpad + / −: kalınlığı kaydırıcının karekök ölçeğinde adım adım değiştirir (ince kalınlıklarda
+// küçük, kalınlarda büyük adım). Art arda basışlar tek geri alma adımıdır.
+let widthKeyTime = 0;
+function stepWidth(dir) {
+  const c = propsContext();
+  if (!c?.widths) return;
+  const range = widthRange(c.widths);
+  const cur = c.values?.width ?? range[0];
+  const s = Math.min(1000, Math.max(0, widthToSlider(cur, range) + dir * 40));
+  let w = sliderToWidth(s, range);
+  if (w === cur) w = cur + dir * 0.5;
+  w = Math.min(range[1], Math.max(range[0], w));
+  if (w === cur) return;
+  applyStyle('width', w, Date.now() - widthKeyTime < 600);
+  widthKeyTime = Date.now();
+  toast(`${w} px`);
+}
+
 // Opaklık kaydırıcısı: kalınlıkta olduğu gibi sürükleme tek geri alma adımıdır.
 $('#opacityRange').addEventListener('input', (e) => {
   const o = Number(e.target.value) / 100;
@@ -4457,6 +4475,17 @@ function setTool(t) {
   updateCursor();
   updateProps();
   requestRender();
+}
+
+// Sol / sağ ok: araç çubuğundaki sıraya göre önceki / sonraki kullanılabilir araç (başa sarar).
+// Salt okunurda yalnızca o kipte çalışan araçlar arasında gezer.
+function cycleTool(dir) {
+  const list = board.readOnly ? RO_TOOLS
+    : [...new Set([...document.querySelectorAll('#toolbar button[data-tool]:not(.gmain)')].map(targetOf))].filter(toolUsable);
+  if (!list.length) return;
+  const i = list.indexOf(tool);
+  closeFlyout();
+  setTool(list[i < 0 ? 0 : (i + dir + list.length) % list.length]);
 }
 
 $('#toolbar').addEventListener('click', (e) => {
@@ -5423,12 +5452,14 @@ const GENERAL_KEYS = [
   [['Tab', 'Shift+Tab'], t('Tabloda sonraki / önceki hücre (son hücrede Tab yeni satır ekler)')],
   [['Tab', 'Enter'], t('Mind map: alt dal / kardeş dal ekle (Shift+Tab bir üst seviyeye taşır)')],
   [['/', 'Alt+↑↓'], t('Mind map: dalı daralt / aç; dalın sırasını değiştir')],
-  [[t('Ok tuşları')], t('Seçileni 1 piksel kaydır (Shift ile 10)')], [['['], t('Arkaya gönder')], [[']'], t('Öne getir')],
+  [[t('Ok tuşları')], t('Seçileni 1 piksel kaydır (Shift ile 10)')],
+  [['←', '→'], t('Önceki / sonraki araç (seçim yokken)')], [['['], t('Arkaya gönder')], [[']'], t('Öne getir')],
   [['Esc'], t('Seçimi bırak, açık pencereyi kapat')], [['Shift', t('tıklama')], t('Seçime ekle / çıkar')],
   [[t('Boşluk'), t('sürükle')], t('Tahtayı kaydır')], [['Ctrl', t('tekerlek')], t('Yakınlaştır / uzaklaştır')],
   [['Shift', t('tekerlek')], t('Yatay kaydır')], [['Ctrl+=', 'Ctrl+-'], t('Yakınlaştır / uzaklaştır')],
   [['Ctrl+0'], t('%100 yakınlık')], [['Ctrl+1'], t('Tümünü ekrana sığdır')],
   [['Shift', 'Ctrl'], t('Kalemle çizerken basılı tut: dümdüz çizgi')],
+  [['Numpad +', 'Numpad −'], t('Fırça / çizgi kalınlığını artır / azalt')],
   ...BRUSHES.slice(0, 10).map((b, i) => [[`Alt+${(i + 1) % 10}`], t('Fırça: {name}', { name: b.label })]),
   [['Shift'], t('Şekil çizerken: kare / daire, 15° adım')],
   [['Esc', 'Ctrl+Enter'], t('Metin / not yazmayı bitir')],
@@ -6633,7 +6664,8 @@ window.addEventListener('keydown', (e) => {
   // (kaydet, yakınlaştır…) ve kaydırma/lazer tuşları çalışır.
   if (board.readOnly) {
     const blocked = mod ? ['z', 'y', 'a', 'd', 'b', 'i', 'u', 'm', 'l', 'x'].includes(k) || (k === 'g' && e.shiftKey)
-      : e.altKey || ['Delete', 'Backspace', '[', ']'].includes(e.key) || e.key.startsWith('Arrow')
+      : e.altKey || ['Delete', 'Backspace', '[', ']'].includes(e.key)
+        || (e.key.startsWith('Arrow') && (e.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(e.key)))
         || (KEYMAP.has(k) && !RO_TOOLS.includes(KEYMAP.get(k)));
     if (blocked) {
       e.preventDefault();
@@ -6687,6 +6719,12 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.code === 'NumpadAdd' || e.code === 'NumpadSubtract') {
+    e.preventDefault();
+    if (!board.readOnly) stepWidth(e.code === 'NumpadAdd' ? 1 : -1);
+    return;
+  }
+
   if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
     deleteSelection();
@@ -6707,6 +6745,9 @@ window.addEventListener('keydown', (e) => {
     nudgeTime = Date.now();
     for (const el of selectedEls()) if (!el.locked) translate(el, d[0], d[1]);
     changed();
+  } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.shiftKey) {
+    e.preventDefault();
+    cycleTool(e.key === 'ArrowRight' ? 1 : -1);
   } else if (e.key === ']') arrange('front');
   else if (e.key === '[') arrange('back');
   else if (!e.altKey && KEYMAP.has(k) && toolUsable(KEYMAP.get(k))) {
